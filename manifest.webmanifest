@@ -1,6 +1,6 @@
 {
-  "name": "Temps Photo",
-  "short_name": "Temps Photo",
+  "name": "Project time tracker",
+  "short_name": "Time tracker",
   "description": "Suivi de temps par projet photo.",
   "start_url": "./index.html",
   "display": "standalone",
@@ -9,19 +9,19 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "./assets/apple-touch-icon.png",
+      "src": "./assets/app-apple-touch-icon.png",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./assets/icon-512.png",
+      "src": "./assets/app-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "./assets/icon.svg",
+      "src": "./assets/app-logo.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

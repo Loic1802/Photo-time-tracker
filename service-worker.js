@@ -1,10 +1,13 @@
-const CACHE_NAME = "temps-photo-v25";
+const CACHE_NAME = "temps-photo-v37";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./manifest.webmanifest",
+  "./assets/app-logo.svg",
+  "./assets/app-apple-touch-icon.png",
+  "./assets/app-icon-512.png",
   "./assets/icon.svg",
   "./assets/picfactory-logo.png",
   "./assets/apple-touch-icon.png",

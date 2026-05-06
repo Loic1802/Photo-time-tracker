@@ -1,4 +1,4 @@
-# Temps Photo
+# Project time tracker
 
 Application mobile-first pour suivre les temps d'un projet photo par catégorie.
 
@@ -7,7 +7,7 @@ Application mobile-first pour suivre les temps d'un projet photo par catégorie.
 - Projets multiples.
 - Liste de projets en cours avec sélection rapide et carrousel tactile.
 - Onglet dédié aux projets terminés.
-- Onglets projet: temps et frais.
+- Onglets projet: projet, temps, frais, bilan.
 - Chronomètre démarrer / terminer.
 - Catégories en carrousel tactile: admin, préparation, shooting, déplacement, édition.
 - Quotas estimés par catégorie en minutes, heures ou jours.
@@ -15,7 +15,12 @@ Application mobile-first pour suivre les temps d'un projet photo par catégorie.
 - Statut rapide: gagnant, à l'heure, perdant.
 - Ajout manuel de temps en minutes, heures ou jours.
 - Suivi des frais par projet avec catégories et total CHF.
+- Prix facturé CHF, net après frais et taux horaire réel.
+- Taux cible CHF/h configurable par projet avec comparaison au taux réel.
+- Analyse des projets terminés: rentabilité, écarts estimé/réel, catégories sous-estimées, projets les plus rentables et conseils.
+- Score manuel plaisir, stress, créativité et difficulté client.
 - Clôture de projet avec le bouton "Projet terminé".
+- Suppression d'un projet en cours ou terminé avec confirmation.
 - Export PDF via la fenêtre d'impression du navigateur.
 - Données sauvegardées localement dans le navigateur.
 - Manifeste PWA et icônes pour installation sur iPhone.
