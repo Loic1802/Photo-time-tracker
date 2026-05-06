@@ -1,0 +1,30 @@
+{
+  "name": "Temps Photo",
+  "short_name": "Temps Photo",
+  "description": "Suivi de temps par projet photo.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f7f8fb",
+  "theme_color": "#f7f8fb",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./assets/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
