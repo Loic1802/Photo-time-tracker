@@ -1,15 +1,18 @@
 const STORAGE_KEY = "temps-photo-state-v23";
 const VIEW_ACTIVE = "active";
 const VIEW_COMPLETED = "completed";
+const MODULE_PROJECT = "project";
 const MODULE_TIME = "time";
 const MODULE_EXPENSES = "expenses";
+const MODULE_BALANCE = "balance";
+const MODULES = [MODULE_PROJECT, MODULE_TIME, MODULE_EXPENSES, MODULE_BALANCE];
 
 const categories = [
-  { id: "admin", label: "Admin", color: "#0f766e", defaultQuota: 1 },
-  { id: "prep", label: "Préparation", color: "#c05621", defaultQuota: 2 },
-  { id: "shooting", label: "Shooting", color: "#d99a00", defaultQuota: 4 },
-  { id: "travel", label: "Déplacement", color: "#007aff", defaultQuota: 1 },
-  { id: "edition", label: "Édition", color: "#5856d6", defaultQuota: 5 },
+  { id: "admin", label: "Admin", color: "#0f766e", softColor: "#d8f1ec", defaultQuota: 1 },
+  { id: "prep", label: "Préparation", color: "#c05621", softColor: "#f8dfce", defaultQuota: 2 },
+  { id: "shooting", label: "Shooting", color: "#b47b00", softColor: "#f7dfa2", defaultQuota: 4 },
+  { id: "travel", label: "Déplacement", color: "#007aff", softColor: "#d8eaff", defaultQuota: 1 },
+  { id: "edition", label: "Édition", color: "#5856d6", softColor: "#e4e2ff", defaultQuota: 5 },
 ];
 
 const expenseCategories = [
@@ -22,6 +25,13 @@ const expenseCategories = [
   { id: "autre", label: "Autre" },
 ];
 
+const scoreItems = [
+  { id: "pleasure", label: "Plaisir" },
+  { id: "stress", label: "Stress" },
+  { id: "creativity", label: "Créativité" },
+  { id: "clientDifficulty", label: "Difficulté client" },
+];
+
 const state = loadState();
 let selectedCategory = "shooting";
 let activeSession = state.activeSession || null;
@@ -30,17 +40,26 @@ let editingProjectId = null;
 let lastImputedSession = null;
 let imputedTimer = null;
 let currentView = VIEW_ACTIVE;
-let currentModule = state.currentModule || MODULE_TIME;
+let currentModule = MODULES.includes(state.currentModule) ? state.currentModule : MODULE_TIME;
+let lastCenteredCategory = null;
 
 const els = {
   viewActive: document.querySelector("#viewActive"),
   viewCompleted: document.querySelector("#viewCompleted"),
+  moduleProject: document.querySelector("#moduleProject"),
   moduleTime: document.querySelector("#moduleTime"),
   moduleExpenses: document.querySelector("#moduleExpenses"),
+  moduleBalance: document.querySelector("#moduleBalance"),
+  projectStrip: document.querySelector(".project-strip"),
   projectListTitle: document.querySelector("#projectListTitle"),
   projectList: document.querySelector("#projectList"),
   activeProjectName: document.querySelector("#activeProjectName"),
   profitStatus: document.querySelector("#profitStatus"),
+  projectHero: document.querySelector("#projectHero"),
+  heroPrice: document.querySelector("#heroPrice"),
+  heroTime: document.querySelector("#heroTime"),
+  heroQuota: document.querySelector("#heroQuota"),
+  heroRate: document.querySelector("#heroRate"),
   timerPanel: document.querySelector(".timer-panel"),
   categoryGrid: document.querySelector("#categoryGrid"),
   timerCategory: document.querySelector("#timerCategory"),
@@ -49,15 +68,26 @@ const els = {
   totalTime: document.querySelector("#totalTime"),
   totalQuota: document.querySelector("#totalQuota"),
   totalDelta: document.querySelector("#totalDelta"),
+  summaryTitle: document.querySelector(".summary-panel h2"),
+  businessSummary: document.querySelector("#businessSummary"),
   categorySummary: document.querySelector("#categorySummary"),
   summaryPanel: document.querySelector(".summary-panel"),
   historyPanel: document.querySelector(".history-panel"),
   sessionList: document.querySelector("#sessionList"),
   clearSessions: document.querySelector("#clearSessions"),
+  analysisPanel: document.querySelector("#analysisPanel"),
+  analysisStatus: document.querySelector("#analysisStatus"),
+  analysisMetrics: document.querySelector("#analysisMetrics"),
+  scoreGrid: document.querySelector("#scoreGrid"),
+  analysisCategoryGaps: document.querySelector("#analysisCategoryGaps"),
+  analysisTrends: document.querySelector("#analysisTrends"),
+  analysisTips: document.querySelector("#analysisTips"),
   projectDialog: document.querySelector("#projectDialog"),
   projectForm: document.querySelector("#projectForm"),
   projectDialogTitle: document.querySelector("#projectDialogTitle"),
   projectNameInput: document.querySelector("#projectNameInput"),
+  projectPriceInput: document.querySelector("#projectPriceInput"),
+  projectTargetRateInput: document.querySelector("#projectTargetRateInput"),
   quotaEditor: document.querySelector("#quotaEditor"),
   openProjectDialog: document.querySelector("#openProjectDialog"),
   editProjectButton: document.querySelector("#editProjectButton"),
@@ -84,6 +114,7 @@ const els = {
   projectActions: document.querySelector("#projectActions"),
   exportProjectPdf: document.querySelector("#exportProjectPdf"),
   finishProject: document.querySelector("#finishProject"),
+  deleteActiveProject: document.querySelector("#deleteActiveProject"),
   printReport: document.querySelector("#printReport"),
 };
 
@@ -110,6 +141,8 @@ function loadState() {
       {
         id: "project-1",
         name: "Mariage civil",
+        price: 1800,
+        targetRate: 120,
         quotas: { admin: 1, prep: 2, shooting: 4, travel: 1, edition: 6 },
         expenses: [
           sampleExpense("transport", 38, "Parking et déplacement"),
@@ -124,6 +157,8 @@ function loadState() {
       {
         id: "project-2",
         name: "Packshot bijoux",
+        price: 1250,
+        targetRate: 110,
         quotas: { admin: 0.75, prep: 1.5, shooting: 3, travel: 0.75, edition: 4 },
         expenses: [sampleExpense("materiel", 42, "Consommables")],
         sessions: [sampleSession("admin", 30), sampleSession("shooting", 110), sampleSession("edition", 80)],
@@ -131,6 +166,8 @@ function loadState() {
       {
         id: "project-3",
         name: "Portrait éditorial",
+        price: 950,
+        targetRate: 120,
         quotas: { admin: 1, prep: 1, shooting: 2, travel: 0.5, edition: 3 },
         expenses: [],
         sessions: [sampleSession("prep", 40), sampleSession("shooting", 120)],
@@ -150,8 +187,11 @@ function loadState() {
 function normalizeState(data) {
   data.projects.forEach((project) => {
     project.status = project.status || VIEW_ACTIVE;
+    project.price = Number(project.price || 0);
+    project.targetRate = Number(project.targetRate || 120);
     project.sessions = project.sessions || [];
     project.expenses = project.expenses || [];
+    project.scores = { pleasure: 3, stress: 3, creativity: 3, clientDifficulty: 3, ...(project.scores || {}) };
     project.quotas = project.quotas || {};
     categories.forEach((category) => {
       if (project.quotas[category.id] === undefined) project.quotas[category.id] = category.defaultQuota;
@@ -187,8 +227,10 @@ function sampleExpense(category, amount, note) {
 function bindEvents() {
   els.viewActive.addEventListener("click", () => switchView(VIEW_ACTIVE));
   els.viewCompleted.addEventListener("click", () => switchView(VIEW_COMPLETED));
+  els.moduleProject.addEventListener("click", () => switchModule(MODULE_PROJECT));
   els.moduleTime.addEventListener("click", () => switchModule(MODULE_TIME));
   els.moduleExpenses.addEventListener("click", () => switchModule(MODULE_EXPENSES));
+  els.moduleBalance.addEventListener("click", () => switchModule(MODULE_BALANCE));
   els.toggleTimer.addEventListener("click", toggleTimer);
   els.openProjectDialog.addEventListener("click", () => openProjectDialog());
   els.editProjectButton.addEventListener("click", () => openProjectDialog(getActiveProject()));
@@ -200,6 +242,7 @@ function bindEvents() {
   els.expenseSave.addEventListener("click", addExpense);
   els.exportProjectPdf.addEventListener("click", exportProjectPdf);
   els.finishProject.addEventListener("click", finishCurrentProject);
+  els.deleteActiveProject.addEventListener("click", () => deleteProject(getActiveProject()?.id));
 
   els.clearSessions.addEventListener("click", () => {
     const project = getActiveProject();
@@ -243,9 +286,11 @@ function bindEvents() {
 
 function switchView(view) {
   currentView = view;
+  state.currentModule = currentModule;
   clearImputedPreview();
   if (currentView === VIEW_COMPLETED) stopTicker();
   if (currentView === VIEW_ACTIVE && activeSession) startTicker();
+  persistState();
   render();
 }
 
@@ -260,36 +305,49 @@ function render() {
   ensureSelectedProject();
   const project = getActiveProject();
   const hasProject = Boolean(project);
+  const isProjectModule = currentModule === MODULE_PROJECT;
   const isTimeModule = currentModule === MODULE_TIME;
   const isExpensesModule = currentModule === MODULE_EXPENSES;
+  const isBalanceModule = currentModule === MODULE_BALANCE;
 
   document.body.dataset.view = currentView;
   document.body.dataset.module = currentModule;
   els.viewActive.classList.toggle("is-active", currentView === VIEW_ACTIVE);
   els.viewCompleted.classList.toggle("is-active", currentView === VIEW_COMPLETED);
+  els.moduleProject.classList.toggle("is-active", isProjectModule);
   els.moduleTime.classList.toggle("is-active", isTimeModule);
   els.moduleExpenses.classList.toggle("is-active", isExpensesModule);
+  els.moduleBalance.classList.toggle("is-active", isBalanceModule);
   els.projectListTitle.textContent = currentView === VIEW_ACTIVE ? "Projets en cours" : "Projets terminés";
   els.activeProjectName.textContent = project?.name || "Aucun projet";
+  els.projectStrip.hidden = false;
+  els.projectHero.hidden = !hasProject || !isProjectModule;
   els.editProjectButton.hidden = !hasProject;
   els.timerPanel.hidden = currentView === VIEW_COMPLETED || !hasProject || !isTimeModule;
-  els.summaryPanel.hidden = !hasProject || !isTimeModule;
-  els.historyPanel.hidden = !hasProject || !isTimeModule;
+  els.summaryPanel.hidden = !hasProject || !(isTimeModule || isBalanceModule);
+  els.historyPanel.hidden = !hasProject || !(isTimeModule || isBalanceModule);
+  els.analysisPanel.hidden = !hasProject || currentView !== VIEW_COMPLETED || !isBalanceModule;
   els.expensesPanel.hidden = !hasProject || !isExpensesModule;
-  els.projectActions.hidden = !hasProject;
+  els.projectActions.hidden = !hasProject || !isBalanceModule;
   els.finishProject.hidden = currentView === VIEW_COMPLETED;
   els.finishProject.disabled = Boolean(activeSession);
-  els.clearSessions.hidden = currentView === VIEW_COMPLETED || !isTimeModule;
+  els.clearSessions.hidden = currentView === VIEW_COMPLETED || !(isTimeModule || isBalanceModule);
 
   renderProjects();
   if (hasProject) {
     renderProjectStatus(project);
+    renderHeroMetrics(project);
     if (isTimeModule) {
       renderTimer();
       renderSummary(project);
       renderSessions(project);
     }
     if (isExpensesModule) renderExpenses(project);
+    if (isBalanceModule) {
+      renderSummary(project);
+      renderSessions(project);
+      if (currentView === VIEW_COMPLETED) renderAnalysis(project);
+    }
   }
 }
 
@@ -306,14 +364,15 @@ function renderProjects() {
     const totalMs = getProjectTotalMs(project);
     const quotaMs = getProjectQuotaMs(project);
     const ratio = quotaMs ? totalMs / quotaMs : 0;
+    const profitability = getProfitability(project);
     const selectedProject = getActiveProject();
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `project-card${project.id === selectedProject?.id ? " is-active" : ""}`;
+    button.className = `project-card ${getQuotaMeterClass(totalMs, quotaMs)}${project.id === selectedProject?.id ? " is-active" : ""}`;
     button.innerHTML = `
       <span class="project-card-top">
         <strong>${project.name}</strong>
-        <em>${getStatusLabel(totalMs, quotaMs)}</em>
+        <em>${profitability.label}</em>
       </span>
       <span class="project-card-time">${formatDuration(totalMs)} / ${formatDuration(quotaMs)}</span>
       <span class="project-mini-meter" aria-hidden="true">
@@ -326,6 +385,8 @@ function renderProjects() {
       } else {
         state.activeProjectId = project.id;
       }
+      currentModule = MODULE_TIME;
+      state.currentModule = currentModule;
       saveAndRender();
     });
     els.projectList.append(button);
@@ -340,6 +401,8 @@ function renderCategoryControls() {
     button.type = "button";
     button.className = "category-button";
     button.style.color = category.color;
+    button.style.setProperty("--category-color", category.color);
+    button.style.setProperty("--category-soft", category.softColor);
     button.dataset.category = category.id;
     button.innerHTML = `
       <span class="dot"></span>
@@ -368,11 +431,17 @@ function renderExpenseCategoryOptions() {
 }
 
 function renderProjectStatus(project) {
-  const totalMs = getProjectTotalMs(project);
-  const quotaMs = getProjectQuotaMs(project);
+  const profitability = getProfitability(project);
   els.profitStatus.className = "status-pill";
-  els.profitStatus.textContent = getStatusLabel(totalMs, quotaMs);
-  els.profitStatus.classList.add(getStatusClass(totalMs, quotaMs));
+  els.profitStatus.textContent = profitability.label;
+  els.profitStatus.classList.add(profitability.className);
+}
+
+function renderHeroMetrics(project) {
+  els.heroPrice.textContent = formatCurrency(project.price);
+  els.heroTime.textContent = formatDuration(getProjectTotalMs(project));
+  els.heroQuota.textContent = formatDuration(getProjectQuotaMs(project));
+  els.heroRate.textContent = `${formatCurrency(getActualHourlyRate(project))}/h`;
 }
 
 function renderTimer() {
@@ -383,7 +452,8 @@ function renderTimer() {
   const elapsed = activeSession ? Date.now() - activeSession.start : 0;
   const displayMs = lastImputedSession && !activeSession ? lastImputedSession.duration : elapsed;
 
-  els.timerPanel.style.setProperty("--active-color", displayCategory.color);
+  els.timerPanel.style.setProperty("--active-color", displayCategory.softColor || displayCategory.color);
+  els.timerPanel.style.setProperty("--active-ink", displayCategory.color);
   els.timerCategory.textContent = lastImputedSession && !activeSession ? `${displayCategory.label} imputé` : displayCategory.label;
   els.timerDisplay.textContent = formatClock(displayMs);
   els.toggleTimer.textContent = activeSession ? "Terminer" : "Démarrer";
@@ -398,6 +468,13 @@ function renderTimer() {
     const quotaLabel = button.querySelector("span:last-child");
     quotaLabel.textContent = `Quota ${formatDuration(hoursToMs(getActiveProject().quotas[category.id] || 0))}`;
   });
+
+  const selectedId = activeSession ? activeSession.category : selectedCategory;
+  const selectedButton = els.categoryGrid.querySelector(`[data-category="${selectedId}"]`);
+  if (selectedButton && lastCenteredCategory !== selectedId) {
+    selectedButton.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    lastCenteredCategory = selectedId;
+  }
 }
 
 function renderSummary(project) {
@@ -410,6 +487,9 @@ function renderSummary(project) {
   els.totalQuota.textContent = `Quota ${formatDuration(quotaMs)}`;
   els.totalDelta.textContent = getBalanceLabel(totalMs, quotaMs);
   els.totalDelta.className = `balance-line ${getStatusClass(totalMs, quotaMs)}`;
+  els.summaryTitle.textContent = currentModule === MODULE_TIME ? "Bilan des temps" : "Bilan";
+  els.businessSummary.hidden = currentModule === MODULE_TIME;
+  if (currentModule !== MODULE_TIME) renderBusinessSummary(project);
 
   els.categorySummary.innerHTML = "";
 
@@ -431,6 +511,38 @@ function renderSummary(project) {
     `;
     els.categorySummary.append(item);
   });
+}
+
+function renderBusinessSummary(project) {
+  const expensesTotal = getProjectExpensesTotal(project);
+  const net = getProjectNetRevenue(project);
+  const actualRate = getActualHourlyRate(project);
+  const targetRate = getProjectTargetRate(project);
+  const profitability = getProfitability(project);
+
+  els.businessSummary.innerHTML = `
+    <div>
+      <span>Prix facturé</span>
+      <strong>${formatCurrency(project.price)}</strong>
+    </div>
+    <div>
+      <span>Frais</span>
+      <strong>${formatCurrency(expensesTotal)}</strong>
+    </div>
+    <div>
+      <span>Net</span>
+      <strong>${formatCurrency(net)}</strong>
+    </div>
+    <div>
+      <span>Taux cible</span>
+      <strong>${formatCurrency(targetRate)}/h</strong>
+    </div>
+    <div class="${profitability.className}">
+      <span>Taux réel</span>
+      <strong>${formatCurrency(actualRate)}/h</strong>
+      <em>${getTargetDeltaLabel(project)}</em>
+    </div>
+  `;
 }
 
 function renderExpenses(project) {
@@ -479,15 +591,94 @@ function renderSessions(project) {
     .forEach((session) => {
       const category = getCategory(session.category);
       const row = document.createElement("div");
+      const date = formatShortDate(session.start);
       row.className = "session-row";
       row.innerHTML = `
         <div class="session-category" style="color: ${category.color}">
           <span>${category.label}</span>
+          <em>${date}</em>
         </div>
         <span class="session-time">${formatDuration(session.duration)}</span>
       `;
       els.sessionList.append(row);
     });
+}
+
+function renderAnalysis(project) {
+  const profitability = getProfitability(project);
+  const categoryPerformance = getCategoryPerformance(project);
+  const underestimated = getUnderestimatedCategories();
+  const profitableProjects = getCompletedProjects()
+    .filter((item) => getProjectTotalMs(item) && item.price)
+    .sort((a, b) => getActualHourlyRate(b) - getActualHourlyRate(a))
+    .slice(0, 3);
+  const longProjects = getCompletedProjects()
+    .filter((item) => getProjectTotalMs(item))
+    .sort((a, b) => getProjectTotalMs(b) - getProjectTotalMs(a))
+    .slice(0, 3);
+
+  els.analysisStatus.className = `status-pill ${profitability.className}`;
+  els.analysisStatus.textContent = profitability.label;
+  els.analysisMetrics.innerHTML = `
+    <div class="analysis-card">
+      <span>Taux réel</span>
+      <strong>${formatCurrency(getActualHourlyRate(project))}/h</strong>
+      <em>${getTargetDeltaLabel(project)}</em>
+    </div>
+    <div class="analysis-card">
+      <span>Temps</span>
+      <strong>${formatDuration(getProjectTotalMs(project))}</strong>
+      <em>sur ${formatDuration(getProjectQuotaMs(project))} prévu</em>
+    </div>
+    <div class="analysis-card">
+      <span>Net</span>
+      <strong>${formatCurrency(getProjectNetRevenue(project))}</strong>
+      <em>après frais</em>
+    </div>
+  `;
+
+  els.scoreGrid.innerHTML = scoreItems
+    .map((score) => {
+      const value = Number(project.scores?.[score.id] || 3);
+      return `
+        <label class="score-item">
+          <span>${score.label}</span>
+          <strong data-score-value="${score.id}">${value}/5</strong>
+          <input type="range" min="1" max="5" step="1" value="${value}" data-score="${score.id}" />
+        </label>
+      `;
+    })
+    .join("");
+
+  els.scoreGrid.querySelectorAll("[data-score]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const key = input.dataset.score;
+      project.scores[key] = Number(input.value);
+      els.scoreGrid.querySelector(`[data-score-value="${key}"]`).textContent = `${input.value}/5`;
+      persistState();
+    });
+  });
+
+  els.analysisCategoryGaps.innerHTML = categoryPerformance
+    .map((item) => {
+      const className = getStatusClass(item.used, item.quota);
+      return `
+        <div class="analysis-row ${className}">
+          <span>${item.category.label}</span>
+          <strong>${formatDuration(item.used)} / ${formatDuration(item.quota)}</strong>
+          <em>${item.deltaLabel}</em>
+        </div>
+      `;
+    })
+    .join("");
+
+  els.analysisTrends.innerHTML = `
+    ${renderTrendBlock("Sous-estimées", underestimated, (item) => `${item.category.label}: +${item.overPercent}% en moyenne`)}
+    ${renderTrendBlock("Plus rentables", profitableProjects, (item) => `${item.name}: ${formatCurrency(getActualHourlyRate(item))}/h`)}
+    ${renderTrendBlock("Plus chronophages", longProjects, (item) => `${item.name}: ${formatDuration(getProjectTotalMs(item))}`)}
+  `;
+
+  els.analysisTips.innerHTML = generateProjectTips(project, underestimated).map((tip) => `<li>${tip}</li>`).join("");
 }
 
 function toggleTimer() {
@@ -551,8 +742,11 @@ function clearImputedPreview() {
 function openProjectDialog(project = null) {
   editingProjectId = project?.id || null;
   els.projectDialogTitle.textContent = project ? "Modifier le projet" : "Nouveau projet";
-  els.deleteProject.hidden = !project || getProjectsForCurrentView().length < 2;
+  els.projectSave.textContent = project ? "Enregistrer" : "Créer projet";
+  els.deleteProject.hidden = !project;
   els.projectNameInput.value = project?.name || "";
+  els.projectPriceInput.value = project?.price || "";
+  els.projectTargetRateInput.value = project?.targetRate || 120;
   renderQuotaEditor(project);
   els.projectDialog.showModal();
   els.projectNameInput.focus();
@@ -590,6 +784,8 @@ function renderQuotaEditor(project) {
 function saveProjectFromDialog() {
   const name = els.projectNameInput.value.trim();
   if (!name) return;
+  const price = Number(els.projectPriceInput.value || 0);
+  const targetRate = Number(els.projectTargetRateInput.value || 0);
 
   const quotas = {};
   categories.forEach((category) => {
@@ -601,10 +797,22 @@ function saveProjectFromDialog() {
   if (editingProjectId) {
     const project = state.projects.find((item) => item.id === editingProjectId);
     project.name = name;
+    project.price = price;
+    project.targetRate = targetRate;
     project.quotas = quotas;
   } else {
     const id = crypto.randomUUID();
-    state.projects.push({ id, name, quotas, sessions: [], expenses: [], status: VIEW_ACTIVE });
+    state.projects.push({
+      id,
+      name,
+      price,
+      targetRate,
+      quotas,
+      sessions: [],
+      expenses: [],
+      scores: { pleasure: 3, stress: 3, creativity: 3, clientDifficulty: 3 },
+      status: VIEW_ACTIVE,
+    });
     state.activeProjectId = id;
     currentView = VIEW_ACTIVE;
   }
@@ -614,13 +822,36 @@ function saveProjectFromDialog() {
 }
 
 function deleteEditingProject() {
-  if (!editingProjectId || getProjectsForCurrentView().length < 2) return;
-  state.projects = state.projects.filter((project) => project.id !== editingProjectId);
-  const nextProject = getProjectsForCurrentView()[0];
-  if (currentView === VIEW_COMPLETED) state.completedProjectId = nextProject?.id || null;
-  else state.activeProjectId = nextProject?.id || null;
+  if (!editingProjectId) return;
+  const deleted = deleteProject(editingProjectId);
+  if (!deleted) return;
   els.projectDialog.close();
+}
+
+function deleteProject(projectId) {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return false;
+  const confirmed = window.confirm(`Supprimer définitivement "${project.name}" ?`);
+  if (!confirmed) return false;
+
+  if (activeSession?.projectId === project.id) {
+    activeSession = null;
+    state.activeSession = null;
+    stopTicker();
+    clearImputedPreview();
+  }
+
+  const wasCompleted = project.status === VIEW_COMPLETED;
+  state.projects = state.projects.filter((item) => item.id !== project.id);
+
+  if (wasCompleted) {
+    state.completedProjectId = state.projects.find((item) => item.status === VIEW_COMPLETED)?.id || null;
+  } else {
+    state.activeProjectId = state.projects.find((item) => item.status !== VIEW_COMPLETED)?.id || null;
+  }
+
   saveAndRender();
+  return true;
 }
 
 function openExpenseDialog() {
@@ -719,6 +950,52 @@ function getProjectExpensesTotal(project) {
   return (project.expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 }
 
+function getProjectNetRevenue(project) {
+  return Number(project.price || 0) - getProjectExpensesTotal(project);
+}
+
+function getActualHourlyRate(project) {
+  const hours = getProjectTotalMs(project) / 3_600_000;
+  if (!hours) return 0;
+  return getProjectNetRevenue(project) / hours;
+}
+
+function getPlannedHourlyRate(project) {
+  const hours = getProjectQuotaMs(project) / 3_600_000;
+  if (!hours) return 0;
+  return getProjectNetRevenue(project) / hours;
+}
+
+function getProjectTargetRate(project) {
+  return Number(project.targetRate || 0);
+}
+
+function getProfitability(project) {
+  const totalMs = getProjectTotalMs(project);
+  const net = getProjectNetRevenue(project);
+  const actualRate = getActualHourlyRate(project);
+  const targetRate = getProjectTargetRate(project);
+
+  if (!project.price || !totalMs) return { label: "À calculer", className: "neutral" };
+  if (net <= 0 || actualRate <= 0) return { label: "Perdant", className: "loss" };
+  if (!targetRate) return actualRate >= 120
+    ? { label: "Rentable", className: "profit" }
+    : actualRate >= 108
+      ? { label: "Limite", className: "warning" }
+      : { label: "Perdant", className: "loss" };
+  if (actualRate >= targetRate) return { label: "Rentable", className: "profit" };
+  if (actualRate >= targetRate * 0.9) return { label: "Limite", className: "warning" };
+  return { label: "Perdant", className: "loss" };
+}
+
+function getTargetDeltaLabel(project) {
+  const targetRate = getProjectTargetRate(project);
+  if (!targetRate) return "Aucun taux cible";
+  const delta = getActualHourlyRate(project) - targetRate;
+  if (delta >= 0) return `${formatCurrency(delta)}/h au-dessus`;
+  return `${formatCurrency(Math.abs(delta))}/h sous cible`;
+}
+
 function getStatusLabel(totalMs, quotaMs) {
   const ratio = quotaMs ? totalMs / quotaMs : 0;
   if (quotaMs === 0) return "Sans quota";
@@ -748,6 +1025,109 @@ function getBalanceLabel(totalMs, quotaMs) {
   const delta = quotaMs - totalMs;
   if (delta >= 0) return `${formatDuration(delta)} disponibles avant quota`;
   return `${formatDuration(Math.abs(delta))} au-dessus du quota`;
+}
+
+function getCompletedProjects() {
+  return state.projects.filter((project) => project.status === VIEW_COMPLETED);
+}
+
+function getCategoryPerformance(project) {
+  const totals = getTotals(project);
+  return categories.map((category) => {
+    const used = totals[category.id] || 0;
+    const quota = hoursToMs(project.quotas[category.id] || 0);
+    const delta = used - quota;
+    const ratio = quota ? used / quota : 0;
+    let deltaLabel = "Dans le quota";
+    if (!quota) deltaLabel = used ? "Sans estimation" : "Non suivi";
+    else if (delta > 0) deltaLabel = `+${formatDuration(delta)}`;
+    else if (ratio >= 0.9) deltaLabel = "Proche du quota";
+    else deltaLabel = `${formatDuration(Math.abs(delta))} dispo`;
+    return { category, used, quota, ratio, deltaLabel };
+  });
+}
+
+function getUnderestimatedCategories() {
+  return categories
+    .map((category) => {
+      const ratios = getCompletedProjects()
+        .map((project) => {
+          const used = getTotals(project)[category.id] || 0;
+          const quota = hoursToMs(project.quotas[category.id] || 0);
+          return quota ? used / quota : 0;
+        })
+        .filter((ratio) => ratio > 0);
+      if (!ratios.length) return null;
+      const averageRatio = ratios.reduce((sum, ratio) => sum + ratio, 0) / ratios.length;
+      const overCount = ratios.filter((ratio) => ratio > 1).length;
+      if (averageRatio <= 1.05 && overCount < 2) return null;
+      return {
+        category,
+        averageRatio,
+        overPercent: Math.round((averageRatio - 1) * 100),
+        overCount,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.averageRatio - a.averageRatio);
+}
+
+function renderTrendBlock(title, items, formatter) {
+  if (!items.length) {
+    return `
+      <div class="trend-block">
+        <strong>${title}</strong>
+        <span>Aucune donnée suffisante</span>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="trend-block">
+      <strong>${title}</strong>
+      ${items.map((item) => `<span>${formatter(item)}</span>`).join("")}
+    </div>
+  `;
+}
+
+function generateProjectTips(project, underestimated) {
+  const tips = [];
+  const overCategory = getCategoryPerformance(project)
+    .filter((item) => item.quota && item.used > item.quota)
+    .sort((a, b) => b.ratio - a.ratio)[0];
+  const targetRate = getProjectTargetRate(project);
+  const actualRate = getActualHourlyRate(project);
+  const scores = project.scores || {};
+
+  if (overCategory) {
+    tips.push(`Ajoute une marge en ${overCategory.category.label.toLowerCase()}: cette catégorie dépasse le prévu.`);
+  } else if (underestimated[0]) {
+    tips.push(`Revois le quota ${underestimated[0].category.label.toLowerCase()}: il est souvent sous-estimé.`);
+  }
+
+  if (targetRate && actualRate && actualRate < targetRate) {
+    tips.push(`Ajuste prix ou temps: il manque ${formatCurrency(targetRate - actualRate)}/h pour la cible.`);
+  } else if (project.price && getProjectQuotaMs(project)) {
+    tips.push(`Garde ce modèle de devis: le taux réel reste cohérent avec l'objectif.`);
+  }
+
+  if (Number(scores.stress) >= 4 || Number(scores.clientDifficulty) >= 4) {
+    tips.push("Ajoute une marge client et cadre mieux les retours dès le devis.");
+  } else if (Number(scores.pleasure) >= 4 && Number(scores.creativity) >= 4) {
+    tips.push("Ce type de projet est bon pour ton énergie: garde-le dans tes offres.");
+  }
+
+  const fallback = [
+    "Renseigne toujours les frais: le taux horaire devient beaucoup plus fiable.",
+    "Compare le temps réel au quota dès la fin du shooting.",
+    "Archive chaque projet terminé pour affiner tes prochains forfaits.",
+  ];
+
+  fallback.forEach((tip) => {
+    if (tips.length < 3) tips.push(tip);
+  });
+
+  return tips.slice(0, 3);
 }
 
 function updateManualDurationBounds() {
@@ -820,6 +1200,8 @@ function buildPrintReport(project) {
   const totalMs = getProjectTotalMs(project);
   const quotaMs = getProjectQuotaMs(project);
   const expensesTotal = getProjectExpensesTotal(project);
+  const actualRate = getActualHourlyRate(project);
+  const targetRate = getProjectTargetRate(project);
   const completed = project.completedAt
     ? new Date(project.completedAt).toLocaleDateString("fr-CH", { day: "2-digit", month: "2-digit", year: "numeric" })
     : "Projet en cours";
@@ -860,8 +1242,9 @@ function buildPrintReport(project) {
       <div class="print-totals">
         <strong>${formatDuration(totalMs)}</strong>
         <span>effectif sur ${formatDuration(quotaMs)} de quota</span>
-        <em>${getStatusLabel(totalMs, quotaMs)}</em>
+        <em>${getProfitability(project).label}</em>
       </div>
+      <p class="print-expense-total">Taux réel: ${formatCurrency(actualRate)}/h | Taux cible: ${formatCurrency(targetRate)}/h</p>
       <h2>Temps par catégorie</h2>
       <table><thead><tr><th>Catégorie</th><th>Effectif</th><th>Quota</th><th>Écart</th></tr></thead><tbody>${rows}</tbody></table>
       <h2>Sessions</h2>
@@ -901,6 +1284,14 @@ function formatDuration(ms) {
   if (h && m) return `${h} h ${String(m).padStart(2, "0")}`;
   if (h) return `${h} h`;
   return `${m} min`;
+}
+
+function formatShortDate(value) {
+  return new Date(value).toLocaleDateString("fr-CH", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
 }
 
 function formatCurrency(amount) {
