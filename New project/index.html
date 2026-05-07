@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7f8fb" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Project time tracker" />
+    <title>Project time tracker</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./assets/app-apple-touch-icon.png" />
+    <link rel="icon" href="./assets/app-logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup" aria-label="Project time tracker">
+          <img class="brand-mark" src="./assets/picfactory-logo.png" alt="" />
+          <div>
+            <p class="eyebrow">PICFACTORY</p>
+            <h1>Project time tracker</h1>
+          </div>
+        </div>
+        <button class="icon-button" id="openProjectDialog" type="button" aria-label="Nouveau projet">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+      </header>
+
+      <nav class="view-tabs" aria-label="Vue des projets">
+        <button class="view-tab is-active" id="viewActive" type="button">En cours</button>
+        <button class="view-tab" id="viewCompleted" type="button">Terminés</button>
+      </nav>
+
+      <main>
+        <section class="project-strip" aria-label="Projets">
+          <div class="section-head">
+            <h2 id="projectListTitle">Projets en cours</h2>
+            <button class="text-button" id="editProjectButton" type="button">Modifier</button>
+          </div>
+          <div class="project-list" id="projectList"></div>
+        </section>
+
+        <nav class="module-tabs" aria-label="Suivi du projet">
+          <button class="module-tab" id="moduleProject" type="button">Projet</button>
+          <button class="module-tab is-active" id="moduleTime" type="button">Temps</button>
+          <button class="module-tab" id="moduleExpenses" type="button">Frais</button>
+          <button class="module-tab" id="moduleBalance" type="button">Bilan</button>
+        </nav>
+
+        <section class="hero-panel" id="projectHero">
+          <div class="project-meta">
+            <p class="eyebrow">Projet actif</p>
+            <h2 id="activeProjectName"></h2>
+          </div>
+          <div class="hero-content">
+            <div class="status-pill" id="profitStatus"></div>
+            <div class="hero-metrics">
+              <span><em>Facturé</em><strong id="heroPrice">CHF 0.–</strong></span>
+              <span><em>Temps réel</em><strong id="heroTime">0 min</strong></span>
+              <span><em>Quota prévu</em><strong id="heroQuota">0 h</strong></span>
+              <span><em>Taux réel</em><strong id="heroRate">CHF 0.–/h</strong></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="expenses-panel" id="expensesPanel" hidden>
+          <div class="section-head">
+            <h2>Frais</h2>
+            <div class="total-stack">
+              <span>Total</span>
+              <strong id="expenseTotal">CHF 0.–</strong>
+              <em id="expenseCount">0 frais</em>
+            </div>
+          </div>
+
+          <button class="save-button expense-add-button" id="openExpenseDialog" type="button">Ajouter un frais</button>
+          <div class="expense-list" id="expenseList"></div>
+        </section>
+
+        <section class="timer-panel" aria-label="Chronomètre">
+          <div class="timer-face">
+            <span id="timerCategory">Prêt</span>
+            <strong id="timerDisplay">00:00:00</strong>
+          </div>
+
+          <div class="category-grid" id="categoryGrid"></div>
+
+          <div class="primary-actions">
+            <button class="start-button" id="toggleTimer" type="button">Démarrer</button>
+            <button class="manual-button" id="addManualTime" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 12V6.5a1.5 1.5 0 0 1 3 0V12" />
+                <path d="M10 11V5.5a1.5 1.5 0 0 1 3 0V12" />
+                <path d="M13 11V7a1.5 1.5 0 0 1 3 0v6" />
+                <path d="M16 12.5V10a1.5 1.5 0 0 1 3 0v4.5A6.5 6.5 0 0 1 12.5 21H11a5 5 0 0 1-3.5-1.45L4.5 16.5a1.7 1.7 0 0 1 2.4-2.4L9 16" />
+              </svg>
+              <span>Ajouter un temps</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="summary-panel">
+          <div class="section-head">
+            <h2>Bilan</h2>
+            <div class="total-stack">
+              <span>Effectif</span>
+              <strong id="totalTime">0 h</strong>
+              <em id="totalQuota">Quota 0 h</em>
+            </div>
+          </div>
+          <p class="balance-line" id="totalDelta"></p>
+          <div class="business-summary" id="businessSummary"></div>
+          <div class="category-summary" id="categorySummary"></div>
+        </section>
+
+        <section class="history-panel">
+          <div class="section-head">
+            <h2>Sessions</h2>
+            <button class="text-button danger" id="clearSessions" type="button">Vider</button>
+          </div>
+          <div class="session-list" id="sessionList"></div>
+        </section>
+
+        <section class="analysis-panel" id="analysisPanel" hidden>
+          <div class="section-head">
+            <h2>Analyse du projet</h2>
+            <div class="status-pill" id="analysisStatus"></div>
+          </div>
+          <div class="analysis-grid" id="analysisMetrics"></div>
+          <div class="score-grid" id="scoreGrid"></div>
+          <div class="analysis-block">
+            <h3>Estimé vs réel</h3>
+            <div class="analysis-list" id="analysisCategoryGaps"></div>
+          </div>
+          <div class="analysis-block">
+            <h3>Tendances terminées</h3>
+            <div class="analysis-list" id="analysisTrends"></div>
+          </div>
+          <div class="analysis-block">
+            <h3>Conseils IA</h3>
+            <ol class="tips-list" id="analysisTips"></ol>
+          </div>
+        </section>
+
+        <section class="project-actions" id="projectActions">
+          <button class="save-button export-button" id="exportProjectPdf" type="button">Exporter PDF</button>
+          <button class="finish-button" id="finishProject" type="button">Projet terminé</button>
+          <button class="delete-project-button" id="deleteActiveProject" type="button">Supprimer le projet</button>
+        </section>
+      </main>
+    </div>
+
+    <div class="print-report" id="printReport" aria-hidden="true"></div>
+
+    <dialog id="projectDialog">
+      <form method="dialog" class="dialog-body" id="projectForm">
+        <div class="dialog-head">
+          <h2 id="projectDialogTitle">Nouveau projet</h2>
+          <button class="icon-button ghost" data-close-dialog type="button" aria-label="Fermer">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <label>
+          <span>Nom</span>
+          <input id="projectNameInput" name="projectName" type="text" autocomplete="off" required />
+        </label>
+
+        <label>
+          <span>Prix facturé CHF</span>
+          <input id="projectPriceInput" name="projectPrice" type="number" min="0" step="1" inputmode="decimal" />
+        </label>
+
+        <label>
+          <span>Taux cible CHF/h</span>
+          <input id="projectTargetRateInput" name="projectTargetRate" type="number" min="0" step="1" inputmode="decimal" />
+        </label>
+
+        <div class="quota-editor" id="quotaEditor"></div>
+
+        <div class="dialog-actions">
+          <button class="text-button danger" id="deleteProject" type="button">Supprimer</button>
+          <button class="save-button" id="projectSave" type="button">Enregistrer</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="manualDialog">
+      <form method="dialog" class="dialog-body" id="manualForm">
+        <div class="dialog-head">
+          <h2>Ajouter du temps</h2>
+          <button class="icon-button ghost" data-close-dialog type="button" aria-label="Fermer">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <label>
+          <span>Catégorie</span>
+          <select id="manualCategory"></select>
+        </label>
+
+        <div class="duration-picker">
+          <label>
+            <span>Durée</span>
+            <input id="manualMinutes" type="number" min="10" max="60" step="1" inputmode="numeric" value="30" required />
+          </label>
+
+          <label>
+            <span>Unité</span>
+            <select id="manualDurationUnit">
+              <option value="minutes">minutes</option>
+              <option value="hours">heures</option>
+              <option value="days">jours</option>
+            </select>
+          </label>
+        </div>
+
+        <button class="save-button" id="manualSave" type="button">Ajouter</button>
+      </form>
+    </dialog>
+
+    <dialog id="expenseDialog">
+      <form method="dialog" class="dialog-body" id="expenseForm">
+        <div class="dialog-head">
+          <h2>Ajouter un frais</h2>
+          <button class="icon-button ghost" data-close-dialog type="button" aria-label="Fermer">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <label>
+          <span>Catégorie</span>
+          <select id="expenseCategory"></select>
+        </label>
+
+        <label>
+          <span>Montant CHF</span>
+          <input id="expenseAmount" type="number" min="0.05" step="0.05" inputmode="decimal" required />
+        </label>
+
+        <label>
+          <span>Note</span>
+          <input id="expenseNote" type="text" autocomplete="off" placeholder="Ex. parking, assistant, location..." />
+        </label>
+
+        <button class="save-button" id="expenseSave" type="button">Ajouter</button>
+      </form>
+    </dialog>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>
