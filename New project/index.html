@@ -14,7 +14,29 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <section class="auth-screen" id="authScreen" hidden>
+      <form class="auth-card" id="authForm">
+        <img class="brand-mark" src="./assets/picfactory-logo.png" alt="" />
+        <div>
+          <p class="eyebrow">PICFACTORY</p>
+          <h1>Project time tracker</h1>
+        </div>
+        <p class="auth-copy">Connecte-toi pour synchroniser tes clients et projets photo.</p>
+        <label>
+          <span>Email</span>
+          <input id="authEmail" type="email" autocomplete="email" required />
+        </label>
+        <label>
+          <span>Mot de passe</span>
+          <input id="authPassword" type="password" autocomplete="current-password" required />
+        </label>
+        <button class="save-button" id="authSubmit" type="submit">Se connecter</button>
+        <button class="text-button" id="authModeToggle" type="button">Créer un compte</button>
+        <p class="auth-message" id="authMessage"></p>
+      </form>
+    </section>
+
+    <div class="app-shell" id="appShell" hidden>
       <header class="topbar">
         <div class="brand-lockup" aria-label="Project time tracker">
           <img class="brand-mark" src="./assets/picfactory-logo.png" alt="" />
@@ -28,6 +50,7 @@
             <path d="M12 5v14M5 12h14" />
           </svg>
         </button>
+        <button class="text-button sign-out-button" id="signOutButton" type="button" hidden>Déconnexion</button>
       </header>
 
       <nav class="view-tabs" aria-label="Vue des projets">
@@ -39,7 +62,10 @@
         <section class="project-strip" aria-label="Projets">
           <div class="section-head">
             <h2 id="projectListTitle">Projets en cours</h2>
-            <button class="text-button" id="editProjectButton" type="button">Modifier</button>
+            <div class="section-actions">
+              <button class="text-button" id="openClientDialog" type="button">Nouveau client</button>
+              <button class="text-button" id="editProjectButton" type="button">Modifier</button>
+            </div>
           </div>
           <div class="project-list" id="projectList"></div>
         </section>
@@ -173,6 +199,11 @@
         </label>
 
         <label>
+          <span>Client</span>
+          <select id="projectClientInput" name="projectClient" required></select>
+        </label>
+
+        <label>
           <span>Prix facturé CHF</span>
           <input id="projectPriceInput" name="projectPrice" type="number" min="0" step="1" inputmode="decimal" />
         </label>
@@ -188,6 +219,51 @@
           <button class="text-button danger" id="deleteProject" type="button">Supprimer</button>
           <button class="save-button" id="projectSave" type="button">Enregistrer</button>
         </div>
+      </form>
+    </dialog>
+
+    <dialog id="deleteConfirmDialog">
+      <form method="dialog" class="dialog-body confirm-dialog" id="deleteConfirmForm">
+        <div class="dialog-head">
+          <h2>Supprimer le projet ?</h2>
+        </div>
+
+        <p id="deleteConfirmText">Voulez-vous vraiment supprimer ce projet ?</p>
+
+        <div class="dialog-actions">
+          <button class="text-button" id="cancelDeleteProject" type="button">Non, annuler</button>
+          <button class="delete-project-button" id="confirmDeleteProject" type="button">Oui, supprimer</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="clientDialog">
+      <form method="dialog" class="dialog-body" id="clientForm">
+        <div class="dialog-head">
+          <h2>Nouveau client</h2>
+          <button class="icon-button ghost" data-close-dialog type="button" aria-label="Fermer">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <label>
+          <span>Nom</span>
+          <input id="clientNameInput" name="clientName" type="text" autocomplete="off" required />
+        </label>
+
+        <label>
+          <span>Contact</span>
+          <input id="clientContactInput" name="clientContact" type="text" autocomplete="off" />
+        </label>
+
+        <label>
+          <span>Email</span>
+          <input id="clientEmailInput" name="clientEmail" type="email" autocomplete="email" />
+        </label>
+
+        <button class="save-button" id="clientSave" type="button">Créer client</button>
       </form>
     </dialog>
 
@@ -257,6 +333,7 @@
       </form>
     </dialog>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
     <script src="./app.js" type="module"></script>
   </body>
 </html>
