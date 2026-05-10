@@ -23,6 +23,7 @@ Application mobile-first pour suivre les temps d'un projet photo par catégorie.
 - Suppression d'un projet en cours ou terminé avec confirmation.
 - Export PDF via la fenêtre d'impression du navigateur.
 - Données sauvegardées localement dans le navigateur.
+- Sauvegarde automatique avec copies de secours locales pour préserver les projets après mise à jour.
 - Manifeste PWA et icônes pour installation sur iPhone.
 
 ## Lancer en local

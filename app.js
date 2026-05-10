@@ -1,4 +1,11 @@
-const STORAGE_KEY = "temps-photo-state-v23";
+const STORAGE_KEY = "project-time-tracker-state-v1";
+const LEGACY_STORAGE_KEYS = ["temps-photo-state-v23"];
+const BACKUP_PREFIX = "project-time-tracker-backup-";
+const BACKUP_INDEX_KEY = "project-time-tracker-backup-index";
+const MAX_BACKUPS = 25;
+const MAX_BACKUP_BYTES = 10 * 1024 * 1024;
+const SUPABASE_URL = "https://oxkinhksdflfcvbqcknu.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_qNW_Z29Ar03T_uE9n33VLw_bcA5AKTE";
 const VIEW_ACTIVE = "active";
 const VIEW_COMPLETED = "completed";
 const MODULE_PROJECT = "project";
@@ -32,18 +39,35 @@ const scoreItems = [
   { id: "clientDifficulty", label: "Difficulté client" },
 ];
 
+let loadedStateFromStorage = false;
 const state = loadState();
+let supabaseClient = null;
+let currentUser = null;
+let authMode = "signIn";
+let syncInProgress = false;
+let syncQueued = false;
+let remoteReady = false;
 let selectedCategory = "shooting";
 let activeSession = state.activeSession || null;
 let ticker = null;
 let editingProjectId = null;
 let lastImputedSession = null;
 let imputedTimer = null;
+let deleteConfirmResolver = null;
 let currentView = VIEW_ACTIVE;
 let currentModule = MODULES.includes(state.currentModule) ? state.currentModule : MODULE_TIME;
 let lastCenteredCategory = null;
 
 const els = {
+  appShell: document.querySelector("#appShell"),
+  authScreen: document.querySelector("#authScreen"),
+  authForm: document.querySelector("#authForm"),
+  authEmail: document.querySelector("#authEmail"),
+  authPassword: document.querySelector("#authPassword"),
+  authSubmit: document.querySelector("#authSubmit"),
+  authModeToggle: document.querySelector("#authModeToggle"),
+  authMessage: document.querySelector("#authMessage"),
+  signOutButton: document.querySelector("#signOutButton"),
   viewActive: document.querySelector("#viewActive"),
   viewCompleted: document.querySelector("#viewCompleted"),
   moduleProject: document.querySelector("#moduleProject"),
@@ -86,13 +110,26 @@ const els = {
   projectForm: document.querySelector("#projectForm"),
   projectDialogTitle: document.querySelector("#projectDialogTitle"),
   projectNameInput: document.querySelector("#projectNameInput"),
+  projectClientInput: document.querySelector("#projectClientInput"),
   projectPriceInput: document.querySelector("#projectPriceInput"),
   projectTargetRateInput: document.querySelector("#projectTargetRateInput"),
   quotaEditor: document.querySelector("#quotaEditor"),
   openProjectDialog: document.querySelector("#openProjectDialog"),
+  openClientDialog: document.querySelector("#openClientDialog"),
   editProjectButton: document.querySelector("#editProjectButton"),
   deleteProject: document.querySelector("#deleteProject"),
   projectSave: document.querySelector("#projectSave"),
+  clientDialog: document.querySelector("#clientDialog"),
+  clientForm: document.querySelector("#clientForm"),
+  clientNameInput: document.querySelector("#clientNameInput"),
+  clientContactInput: document.querySelector("#clientContactInput"),
+  clientEmailInput: document.querySelector("#clientEmailInput"),
+  clientSave: document.querySelector("#clientSave"),
+  deleteConfirmDialog: document.querySelector("#deleteConfirmDialog"),
+  deleteConfirmForm: document.querySelector("#deleteConfirmForm"),
+  deleteConfirmText: document.querySelector("#deleteConfirmText"),
+  cancelDeleteProject: document.querySelector("#cancelDeleteProject"),
+  confirmDeleteProject: document.querySelector("#confirmDeleteProject"),
   manualDialog: document.querySelector("#manualDialog"),
   manualForm: document.querySelector("#manualForm"),
   manualCategory: document.querySelector("#manualCategory"),
@@ -120,27 +157,82 @@ const els = {
 
 init();
 
-function init() {
+async function init() {
+  setupSupabase();
   if (activeSession) selectedCategory = activeSession.category;
   renderCategoryControls();
   renderManualCategoryOptions();
   renderExpenseCategoryOptions();
+  renderProjectClientOptions();
   render();
   if (activeSession) startTicker();
   bindEvents();
+  await initializeAuth();
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./service-worker.js").catch(() => {});
   }
 }
 
+function setupSupabase() {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !window.supabase?.createClient) return;
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+async function initializeAuth() {
+  if (!supabaseClient) {
+    showOfflineFallback("Supabase est indisponible. Mode local temporaire actif.");
+    setAuthMessage("Mode local actif. Ajoute SUPABASE_URL et SUPABASE_ANON_KEY pour activer la synchronisation.");
+    return;
+  }
+
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error) {
+    showOfflineFallback("Connexion Supabase impossible. Mode local temporaire actif.");
+    return;
+  }
+  currentUser = data.session?.user || null;
+  supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+    currentUser = session?.user || null;
+    if (currentUser) {
+      hideAuthScreen();
+      await loadRemoteState();
+      saveAndRender();
+    } else {
+      showAuthScreen();
+    }
+  });
+
+  if (!currentUser) {
+    showAuthScreen();
+    return;
+  }
+
+  hideAuthScreen();
+  await loadRemoteState();
+  saveAndRender();
+}
+
+function showOfflineFallback(message) {
+  els.authScreen.hidden = true;
+  els.appShell.hidden = false;
+  els.signOutButton.hidden = true;
+  setAuthMessage(message);
+}
+
 function loadState() {
   const fallback = {
     activeProjectId: "project-1",
+    clients: [
+      sampleClient("client-1", "Famille Dubois", "Claire Dubois", "claire@example.com"),
+      sampleClient("client-2", "Atelier Bijoux", "Sophie Martin", "sophie@example.com"),
+      sampleClient("client-3", "Magazine Riviera", "David Meyer", "david@example.com"),
+    ],
     projects: [
       {
         id: "project-1",
         name: "Mariage civil",
+        clientId: "client-1",
         price: 1800,
         targetRate: 120,
         quotas: { admin: 1, prep: 2, shooting: 4, travel: 1, edition: 6 },
@@ -157,6 +249,7 @@ function loadState() {
       {
         id: "project-2",
         name: "Packshot bijoux",
+        clientId: "client-2",
         price: 1250,
         targetRate: 110,
         quotas: { admin: 0.75, prep: 1.5, shooting: 3, travel: 0.75, edition: 4 },
@@ -166,6 +259,7 @@ function loadState() {
       {
         id: "project-3",
         name: "Portrait éditorial",
+        clientId: "client-3",
         price: 950,
         targetRate: 120,
         quotas: { admin: 1, prep: 1, shooting: 2, travel: 0.5, edition: 3 },
@@ -175,17 +269,59 @@ function loadState() {
     ],
   };
 
+  const stored = loadStoredState();
+  if (stored?.projects?.length) {
+    loadedStateFromStorage = true;
+    return normalizeState(stored);
+  }
+  return normalizeState(fallback);
+}
+
+function sampleClient(id, name, contact, email) {
+  return { id, name, contact, email };
+}
+
+function loadStoredState() {
+  const keys = [STORAGE_KEY, ...LEGACY_STORAGE_KEYS, ...getBackupKeys()];
+
+  for (const key of keys) {
+    const parsed = parseStoredState(localStorage.getItem(key));
+    if (parsed?.projects?.length) return parsed;
+  }
+
+  return null;
+}
+
+function parseStoredState(value) {
+  if (!value) return null;
   try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (!parsed?.projects?.length) return normalizeState(fallback);
-    return normalizeState(parsed);
+    return JSON.parse(value);
   } catch {
-    return normalizeState(fallback);
+    return null;
   }
 }
 
+function getBackupKeys() {
+  const fromIndex = parseStoredState(localStorage.getItem(BACKUP_INDEX_KEY));
+  if (Array.isArray(fromIndex)) return fromIndex;
+  return getAllBackupKeys();
+}
+
+function getAllBackupKeys() {
+  const keys = [];
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (key?.startsWith(BACKUP_PREFIX)) keys.push(key);
+  }
+
+  return keys.sort().reverse();
+}
+
 function normalizeState(data) {
+  data.userId = data.userId || null;
+  data.clients = normalizeClients(data.clients);
   data.projects.forEach((project) => {
+    project.clientId = project.clientId || data.clients[0].id;
     project.status = project.status || VIEW_ACTIVE;
     project.price = Number(project.price || 0);
     project.targetRate = Number(project.targetRate || 120);
@@ -200,6 +336,20 @@ function normalizeState(data) {
   data.activeProjectId = data.activeProjectId || data.projects.find((project) => project.status !== VIEW_COMPLETED)?.id;
   data.completedProjectId = data.completedProjectId || data.projects.find((project) => project.status === VIEW_COMPLETED)?.id || null;
   return data;
+}
+
+function normalizeClients(clients = []) {
+  const normalized = clients
+    .filter((client) => client?.id || client?.name)
+    .map((client) => ({
+      id: client.id || crypto.randomUUID(),
+      name: client.name || "Client non renseigné",
+      contact: client.contact || "",
+      email: client.email || "",
+    }));
+
+  if (normalized.length) return normalized;
+  return [{ id: "client-default", name: "Client non renseigné", contact: "", email: "" }];
 }
 
 function sampleSession(category, minutes) {
@@ -225,6 +375,9 @@ function sampleExpense(category, amount, note) {
 }
 
 function bindEvents() {
+  els.authForm.addEventListener("submit", handleAuthSubmit);
+  els.authModeToggle.addEventListener("click", toggleAuthMode);
+  els.signOutButton.addEventListener("click", signOut);
   els.viewActive.addEventListener("click", () => switchView(VIEW_ACTIVE));
   els.viewCompleted.addEventListener("click", () => switchView(VIEW_COMPLETED));
   els.moduleProject.addEventListener("click", () => switchModule(MODULE_PROJECT));
@@ -233,9 +386,11 @@ function bindEvents() {
   els.moduleBalance.addEventListener("click", () => switchModule(MODULE_BALANCE));
   els.toggleTimer.addEventListener("click", toggleTimer);
   els.openProjectDialog.addEventListener("click", () => openProjectDialog());
+  els.openClientDialog.addEventListener("click", openClientDialog);
   els.editProjectButton.addEventListener("click", () => openProjectDialog(getActiveProject()));
   els.addManualTime.addEventListener("click", () => els.manualDialog.showModal());
   els.projectSave.addEventListener("click", saveProjectFromDialog);
+  els.clientSave.addEventListener("click", saveClientFromDialog);
   els.manualSave.addEventListener("click", addManualSession);
   els.manualDurationUnit.addEventListener("change", updateManualDurationBounds);
   els.openExpenseDialog.addEventListener("click", () => openExpenseDialog());
@@ -243,6 +398,8 @@ function bindEvents() {
   els.exportProjectPdf.addEventListener("click", exportProjectPdf);
   els.finishProject.addEventListener("click", finishCurrentProject);
   els.deleteActiveProject.addEventListener("click", () => deleteProject(getActiveProject()?.id));
+  els.cancelDeleteProject.addEventListener("click", () => resolveDeleteConfirmation(false));
+  els.confirmDeleteProject.addEventListener("click", () => resolveDeleteConfirmation(true));
 
   els.clearSessions.addEventListener("click", () => {
     const project = getActiveProject();
@@ -255,6 +412,17 @@ function bindEvents() {
     event.preventDefault();
     saveProjectFromDialog();
   });
+
+  els.clientForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveClientFromDialog();
+  });
+
+  els.deleteConfirmForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+  });
+  els.deleteConfirmDialog.addEventListener("cancel", () => resolveDeleteConfirmation(false));
+  els.deleteConfirmDialog.addEventListener("close", () => resolveDeleteConfirmation(false));
 
   els.manualForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -282,6 +450,71 @@ function bindEvents() {
       startTicker();
     }
   });
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  if (!supabaseClient) {
+    setAuthMessage("Supabase n'est pas encore configuré dans app.js.");
+    return;
+  }
+
+  const email = els.authEmail.value.trim();
+  const password = els.authPassword.value;
+  if (!email || !password) return;
+
+  els.authSubmit.disabled = true;
+  setAuthMessage(authMode === "signUp" ? "Création du compte..." : "Connexion...");
+
+  const response = authMode === "signUp"
+    ? await supabaseClient.auth.signUp({ email, password })
+    : await supabaseClient.auth.signInWithPassword({ email, password });
+
+  els.authSubmit.disabled = false;
+
+  if (response.error) {
+    setAuthMessage(response.error.message);
+    return;
+  }
+
+  currentUser = response.data.user || response.data.session?.user || null;
+  if (!currentUser && authMode === "signUp") {
+    setAuthMessage("Compte créé. Vérifie ton email si Supabase demande une confirmation.");
+    return;
+  }
+
+  hideAuthScreen();
+  await loadRemoteState();
+  saveAndRender();
+}
+
+function toggleAuthMode() {
+  authMode = authMode === "signIn" ? "signUp" : "signIn";
+  els.authSubmit.textContent = authMode === "signUp" ? "Créer le compte" : "Se connecter";
+  els.authModeToggle.textContent = authMode === "signUp" ? "J'ai déjà un compte" : "Créer un compte";
+  els.authPassword.autocomplete = authMode === "signUp" ? "new-password" : "current-password";
+  setAuthMessage("");
+}
+
+async function signOut() {
+  if (!supabaseClient) return;
+  await supabaseClient.auth.signOut();
+}
+
+function showAuthScreen() {
+  els.authScreen.hidden = false;
+  els.appShell.hidden = true;
+  els.signOutButton.hidden = true;
+}
+
+function hideAuthScreen() {
+  els.authScreen.hidden = true;
+  els.appShell.hidden = false;
+  els.signOutButton.hidden = !currentUser;
+}
+
+function setAuthMessage(message) {
+  els.authMessage.textContent = message || "";
 }
 
 function switchView(view) {
@@ -326,7 +559,7 @@ function render() {
   els.timerPanel.hidden = currentView === VIEW_COMPLETED || !hasProject || !isTimeModule;
   els.summaryPanel.hidden = !hasProject || !(isTimeModule || isBalanceModule);
   els.historyPanel.hidden = !hasProject || !(isTimeModule || isBalanceModule);
-  els.analysisPanel.hidden = !hasProject || currentView !== VIEW_COMPLETED || !isBalanceModule;
+  els.analysisPanel.hidden = !hasProject || !isBalanceModule;
   els.expensesPanel.hidden = !hasProject || !isExpensesModule;
   els.projectActions.hidden = !hasProject || !isBalanceModule;
   els.finishProject.hidden = currentView === VIEW_COMPLETED;
@@ -346,7 +579,7 @@ function render() {
     if (isBalanceModule) {
       renderSummary(project);
       renderSessions(project);
-      if (currentView === VIEW_COMPLETED) renderAnalysis(project);
+      renderAnalysis(project);
     }
   }
 }
@@ -360,41 +593,57 @@ function renderProjects() {
     return;
   }
 
-  projects.forEach((project) => {
-    const totalMs = getProjectTotalMs(project);
-    const quotaMs = getProjectQuotaMs(project);
-    const ratio = quotaMs ? totalMs / quotaMs : 0;
-    const profitability = getProfitability(project);
-    const selectedProject = getActiveProject();
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `project-card ${getQuotaMeterClass(totalMs, quotaMs)}${project.id === selectedProject?.id ? " is-active" : ""}`;
-    button.innerHTML = `
-      <span class="project-card-top">
-        <strong>${project.name}</strong>
-        <em>${profitability.label}</em>
-      </span>
-      <span class="project-card-time">${formatDuration(totalMs)} / ${formatDuration(quotaMs)}</span>
-      <span class="project-mini-meter" aria-hidden="true">
-        <span class="${getQuotaMeterClass(totalMs, quotaMs)}" style="--fill: ${quotaMs ? Math.min(100, Math.round(ratio * 100)) : 0}%"></span>
-      </span>
+  getClientsWithProjects(projects).forEach(({ client, projects: clientProjects }) => {
+    const group = document.createElement("section");
+    group.className = "client-project-group";
+    group.innerHTML = `
+      <div class="client-group-head">
+        <strong>${client.name}</strong>
+        <span>${clientProjects.length} ${clientProjects.length > 1 ? "projets" : "projet"}</span>
+      </div>
+      <div class="client-project-row"></div>
     `;
-    button.addEventListener("click", () => {
-      if (currentView === VIEW_COMPLETED) {
-        state.completedProjectId = project.id;
-      } else {
-        state.activeProjectId = project.id;
-      }
-      currentModule = MODULE_TIME;
-      state.currentModule = currentModule;
-      saveAndRender();
+    const row = group.querySelector(".client-project-row");
+
+    clientProjects.forEach((project) => {
+      const totalMs = getProjectTotalMs(project);
+      const quotaMs = getProjectQuotaMs(project);
+      const ratio = quotaMs ? totalMs / quotaMs : 0;
+      const profitability = getProfitability(project);
+      const selectedProject = getActiveProject();
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `project-card ${getQuotaMeterClass(totalMs, quotaMs)}${project.id === selectedProject?.id ? " is-active" : ""}`;
+      button.innerHTML = `
+        <span class="project-card-top">
+          <strong>${project.name}</strong>
+          <em>${profitability.label}</em>
+        </span>
+        <span class="project-card-time">${formatDuration(totalMs)} / ${formatDuration(quotaMs)}</span>
+        <span class="project-mini-meter" aria-hidden="true">
+          <span class="${getQuotaMeterClass(totalMs, quotaMs)}" style="--fill: ${quotaMs ? Math.min(100, Math.round(ratio * 100)) : 0}%"></span>
+        </span>
+      `;
+      button.addEventListener("click", () => {
+        if (currentView === VIEW_COMPLETED) {
+          state.completedProjectId = project.id;
+        } else {
+          state.activeProjectId = project.id;
+        }
+        currentModule = MODULE_TIME;
+        state.currentModule = currentModule;
+        saveAndRender();
+      });
+      row.append(button);
     });
-    els.projectList.append(button);
+
+    els.projectList.append(group);
   });
 }
 
 function renderCategoryControls() {
   els.categoryGrid.innerHTML = "";
+  const activeProject = getActiveProject();
 
   categories.forEach((category) => {
     const button = document.createElement("button");
@@ -407,7 +656,7 @@ function renderCategoryControls() {
     button.innerHTML = `
       <span class="dot"></span>
       <strong>${category.label}</strong>
-      <span>Quota ${formatDuration(hoursToMs(getActiveProject().quotas[category.id] || 0))}</span>
+      <span>Quota ${formatDuration(hoursToMs(activeProject?.quotas?.[category.id] ?? category.defaultQuota))}</span>
     `;
     button.addEventListener("click", () => {
       if (activeSession) return;
@@ -427,6 +676,13 @@ function renderManualCategoryOptions() {
 function renderExpenseCategoryOptions() {
   els.expenseCategory.innerHTML = expenseCategories
     .map((category) => `<option value="${category.id}">${category.label}</option>`)
+    .join("");
+}
+
+function renderProjectClientOptions(selectedClientId = null) {
+  const selectedId = selectedClientId || getActiveProject()?.clientId || state.clients[0]?.id;
+  els.projectClientInput.innerHTML = state.clients
+    .map((client) => `<option value="${client.id}"${client.id === selectedId ? " selected" : ""}>${client.name}</option>`)
     .join("");
 }
 
@@ -745,6 +1001,7 @@ function openProjectDialog(project = null) {
   els.projectSave.textContent = project ? "Enregistrer" : "Créer projet";
   els.deleteProject.hidden = !project;
   els.projectNameInput.value = project?.name || "";
+  renderProjectClientOptions(project?.clientId || state.clients[0]?.id);
   els.projectPriceInput.value = project?.price || "";
   els.projectTargetRateInput.value = project?.targetRate || 120;
   renderQuotaEditor(project);
@@ -784,6 +1041,7 @@ function renderQuotaEditor(project) {
 function saveProjectFromDialog() {
   const name = els.projectNameInput.value.trim();
   if (!name) return;
+  const clientId = els.projectClientInput.value || state.clients[0]?.id;
   const price = Number(els.projectPriceInput.value || 0);
   const targetRate = Number(els.projectTargetRateInput.value || 0);
 
@@ -797,6 +1055,7 @@ function saveProjectFromDialog() {
   if (editingProjectId) {
     const project = state.projects.find((item) => item.id === editingProjectId);
     project.name = name;
+    project.clientId = clientId;
     project.price = price;
     project.targetRate = targetRate;
     project.quotas = quotas;
@@ -805,6 +1064,7 @@ function saveProjectFromDialog() {
     state.projects.push({
       id,
       name,
+      clientId,
       price,
       targetRate,
       quotas,
@@ -821,17 +1081,41 @@ function saveProjectFromDialog() {
   saveAndRender();
 }
 
-function deleteEditingProject() {
+function openClientDialog() {
+  els.clientForm.reset();
+  els.clientDialog.showModal();
+  els.clientNameInput.focus();
+}
+
+function saveClientFromDialog() {
+  const name = els.clientNameInput.value.trim();
+  if (!name) return;
+
+  const client = {
+    id: crypto.randomUUID(),
+    name,
+    contact: els.clientContactInput.value.trim(),
+    email: els.clientEmailInput.value.trim(),
+  };
+
+  state.clients.push(client);
+  els.clientDialog.close();
+  persistState();
+  renderProjectClientOptions(client.id);
+  render();
+}
+
+async function deleteEditingProject() {
   if (!editingProjectId) return;
-  const deleted = deleteProject(editingProjectId);
+  const deleted = await deleteProject(editingProjectId);
   if (!deleted) return;
   els.projectDialog.close();
 }
 
-function deleteProject(projectId) {
+async function deleteProject(projectId) {
   const project = state.projects.find((item) => item.id === projectId);
   if (!project) return false;
-  const confirmed = window.confirm(`Supprimer définitivement "${project.name}" ?`);
+  const confirmed = await confirmProjectDeletion(project);
   if (!confirmed) return false;
 
   if (activeSession?.projectId === project.id) {
@@ -852,6 +1136,22 @@ function deleteProject(projectId) {
 
   saveAndRender();
   return true;
+}
+
+function confirmProjectDeletion(project) {
+  els.deleteConfirmText.textContent = `Voulez-vous vraiment supprimer le projet "${project.name}" ? Cette action est définitive.`;
+  els.deleteConfirmDialog.showModal();
+
+  return new Promise((resolve) => {
+    deleteConfirmResolver = resolve;
+  });
+}
+
+function resolveDeleteConfirmation(confirmed) {
+  els.deleteConfirmDialog.close();
+  if (!deleteConfirmResolver) return;
+  deleteConfirmResolver(confirmed);
+  deleteConfirmResolver = null;
 }
 
 function openExpenseDialog() {
@@ -911,6 +1211,29 @@ function getActiveProject() {
 function getProjectsForCurrentView() {
   return state.projects.filter((project) => {
     return currentView === VIEW_COMPLETED ? project.status === VIEW_COMPLETED : project.status !== VIEW_COMPLETED;
+  });
+}
+
+function getClientById(clientId) {
+  return state.clients.find((client) => client.id === clientId) || state.clients[0];
+}
+
+function getClientsWithProjects(projects) {
+  const clientOrder = state.clients.map((client) => client.id);
+  const grouped = projects.reduce((groups, project) => {
+    const client = getClientById(project.clientId);
+    if (!groups.has(client.id)) groups.set(client.id, { client, projects: [] });
+    groups.get(client.id).projects.push(project);
+    return groups;
+  }, new Map());
+
+  return [...grouped.values()].sort((a, b) => {
+    const aIndex = clientOrder.indexOf(a.client.id);
+    const bIndex = clientOrder.indexOf(b.client.id);
+    if (aIndex === -1 && bIndex === -1) return a.client.name.localeCompare(b.client.name);
+    if (aIndex === -1) return 1;
+    if (bIndex === -1) return -1;
+    return aIndex - bIndex;
   });
 }
 
@@ -1257,7 +1580,204 @@ function buildPrintReport(project) {
 }
 
 function persistState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (currentUser) state.userId = currentUser.id;
+  const serialized = JSON.stringify(state);
+  saveBackupSnapshot(serialized);
+  localStorage.setItem(STORAGE_KEY, serialized);
+  queueSupabaseSync();
+}
+
+async function loadRemoteState() {
+  if (!supabaseClient || !currentUser) return;
+
+  const [{ data: clients, error: clientsError }, { data: projects, error: projectsError }] = await Promise.all([
+    supabaseClient.from("clients").select("id,user_id,name,contact,email").eq("user_id", currentUser.id).order("name"),
+    supabaseClient.from("projects").select("id,user_id,client_id,name,price,target_rate,quotas,sessions,expenses,status").eq("user_id", currentUser.id).order("name"),
+  ]);
+
+  if (clientsError || projectsError) {
+    setAuthMessage("Synchronisation indisponible. L'app continue avec la sauvegarde locale.");
+    remoteReady = false;
+    return;
+  }
+
+  const remoteClients = (clients || []).map(mapClientFromSupabase);
+  const remoteProjects = (projects || []).map(mapProjectFromSupabase);
+  const localClients = [...state.clients];
+  const localProjects = [...state.projects];
+
+  remoteReady = true;
+
+  const canMigrateLocalState = loadedStateFromStorage && localProjects.length && (!state.userId || state.userId === currentUser.id);
+
+  if (canMigrateLocalState) {
+    const mergedState = normalizeState({
+      ...state,
+      userId: currentUser.id,
+      activeSession,
+      clients: mergeById(remoteClients, localClients),
+      projects: mergeById(remoteProjects, localProjects),
+    });
+    replaceState(mergedState);
+    await syncStateToSupabase({ prune: false });
+    return;
+  }
+
+  const remoteState = normalizeState({
+    ...state,
+    userId: currentUser.id,
+    activeSession,
+    clients: remoteClients,
+    projects: remoteProjects,
+  });
+
+  replaceState(remoteState);
+}
+
+function mergeById(remoteItems, localItems) {
+  const merged = new Map(remoteItems.map((item) => [item.id, item]));
+  localItems.forEach((item) => {
+    merged.set(item.id, { ...(merged.get(item.id) || {}), ...item });
+  });
+  return [...merged.values()];
+}
+
+function replaceState(nextState) {
+  Object.keys(state).forEach((key) => delete state[key]);
+  Object.assign(state, nextState);
+  activeSession = state.activeSession || null;
+  currentModule = MODULES.includes(state.currentModule) ? state.currentModule : MODULE_TIME;
+  if (activeSession) selectedCategory = activeSession.category;
+}
+
+function mapClientFromSupabase(client) {
+  return {
+    id: client.id,
+    name: client.name,
+    contact: client.contact || "",
+    email: client.email || "",
+  };
+}
+
+function mapProjectFromSupabase(project) {
+  return {
+    id: project.id,
+    clientId: project.client_id,
+    name: project.name,
+    price: Number(project.price || 0),
+    targetRate: Number(project.target_rate || 120),
+    quotas: project.quotas || {},
+    sessions: project.sessions || [],
+    expenses: project.expenses || [],
+    status: project.status || VIEW_ACTIVE,
+  };
+}
+
+function mapClientToSupabase(client) {
+  return {
+    id: client.id,
+    user_id: currentUser.id,
+    name: client.name,
+    contact: client.contact || "",
+    email: client.email || "",
+  };
+}
+
+function mapProjectToSupabase(project) {
+  return {
+    id: project.id,
+    user_id: currentUser.id,
+    client_id: project.clientId,
+    name: project.name,
+    price: Number(project.price || 0),
+    target_rate: Number(project.targetRate || 0),
+    quotas: project.quotas || {},
+    sessions: project.sessions || [],
+    expenses: project.expenses || [],
+    status: project.status || VIEW_ACTIVE,
+  };
+}
+
+function queueSupabaseSync() {
+  if (!supabaseClient || !currentUser || !remoteReady) return;
+  if (syncInProgress) {
+    syncQueued = true;
+    return;
+  }
+
+  window.setTimeout(syncStateToSupabase, 0);
+}
+
+async function syncStateToSupabase(options = {}) {
+  if (!supabaseClient || !currentUser) return;
+  const { prune = true } = options;
+
+  syncInProgress = true;
+  try {
+    if (state.clients.length) {
+      const { error } = await supabaseClient.from("clients").upsert(state.clients.map(mapClientToSupabase));
+      if (error) throw error;
+    }
+
+    if (state.projects.length) {
+      const { error } = await supabaseClient.from("projects").upsert(state.projects.map(mapProjectToSupabase));
+      if (error) throw error;
+    }
+
+    if (prune) {
+      await pruneRemoteRows("projects", state.projects.map((project) => project.id));
+      await pruneRemoteRows("clients", state.clients.map((client) => client.id));
+    }
+    remoteReady = true;
+  } catch {
+    setAuthMessage("Sync Supabase en attente. Les données restent sauvegardées localement.");
+  } finally {
+    syncInProgress = false;
+    if (syncQueued) {
+      syncQueued = false;
+      await syncStateToSupabase();
+    }
+  }
+}
+
+async function pruneRemoteRows(table, keptIds) {
+  const { data, error } = await supabaseClient.from(table).select("id").eq("user_id", currentUser.id);
+  if (error) throw error;
+  const staleIds = (data || []).map((row) => row.id).filter((id) => !keptIds.includes(id));
+  if (!staleIds.length) return;
+  const { error: deleteError } = await supabaseClient.from(table).delete().eq("user_id", currentUser.id).in("id", staleIds);
+  if (deleteError) throw deleteError;
+}
+
+function saveBackupSnapshot(serialized) {
+  try {
+    const key = `${BACKUP_PREFIX}${new Date().toISOString()}`;
+    localStorage.setItem(key, serialized);
+    const backupKeys = pruneBackupKeys([key, ...getBackupKeys().filter((item) => item !== key)].slice(0, MAX_BACKUPS));
+    localStorage.setItem(BACKUP_INDEX_KEY, JSON.stringify(backupKeys));
+    getAllBackupKeys()
+      .filter((item) => !backupKeys.includes(item))
+      .forEach((oldKey) => localStorage.removeItem(oldKey));
+  } catch {
+    localStorage.setItem(STORAGE_KEY, serialized);
+  }
+}
+
+function pruneBackupKeys(keys) {
+  const kept = [...keys];
+
+  while (kept.length && getBackupStorageBytes(kept) > MAX_BACKUP_BYTES) {
+    kept.pop();
+  }
+
+  return kept;
+}
+
+function getBackupStorageBytes(keys) {
+  return keys.reduce((total, key) => {
+    const value = localStorage.getItem(key) || "";
+    return total + new Blob([value]).size;
+  }, 0);
 }
 
 function hoursToMs(hours) {
