@@ -1,4 +1,4 @@
-const CACHE_NAME = "temps-photo-v45";
+const CACHE_NAME = "frames-v1";
 const ASSETS = [
   "./",
   "./index.html",

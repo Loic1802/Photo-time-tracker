@@ -1,45 +1,59 @@
-# Project time tracker
+# Frames — Mini ERP pour photographe freelance
 
-Application mobile-first pour suivre les temps d'un projet photo par catégorie.
+Application mobile-first (PWA) pour photographes freelance suisses.
+Pricer les offres, post-calculer un projet, capitaliser sur le passé, suivre la prospection.
 
-## Ce qui est prêt
+## Stack
 
-- Projets multiples.
-- Liste de projets en cours avec sélection rapide et carrousel tactile.
-- Onglet dédié aux projets terminés.
-- Onglets projet: projet, temps, frais, bilan.
-- Chronomètre démarrer / terminer.
-- Catégories en carrousel tactile: admin, préparation, shooting, déplacement, édition.
-- Quotas estimés par catégorie en minutes, heures ou jours.
-- Cumul par catégorie, temps effectif et quota total.
-- Statut rapide: gagnant, à l'heure, perdant.
-- Ajout manuel de temps en minutes, heures ou jours.
-- Suivi des frais par projet avec catégories et total CHF.
-- Prix facturé CHF, net après frais et taux horaire réel.
-- Taux cible CHF/h configurable par projet avec comparaison au taux réel.
-- Analyse des projets terminés: rentabilité, écarts estimé/réel, catégories sous-estimées, projets les plus rentables et conseils.
-- Score manuel plaisir, stress, créativité et difficulté client.
-- Clôture de projet avec le bouton "Projet terminé".
-- Suppression d'un projet en cours ou terminé avec confirmation.
-- Export PDF via la fenêtre d'impression du navigateur.
-- Données sauvegardées localement dans le navigateur.
-- Sauvegarde automatique avec copies de secours locales pour préserver les projets après mise à jour.
-- Manifeste PWA et icônes pour installation sur iPhone.
+- Vanilla JS (ES6 modules, pas de framework, pas de bundler)
+- localStorage pour toutes les données (préfixe `fr_`)
+- PWA — installable sur iPhone via Safari
+- Déploiement Vercel
+
+## Design system
+
+- Fond : dégradé bleu-gris fixé `#C9D6E3 → #A8BDD0`
+- Glass cards : `rgba(255,255,255,0.55)` + `backdrop-filter: blur(10px)`
+- Accent orange : `linear-gradient(135deg, #F59332, #D4700A)`
+- Fonts : DM Serif Display italic (titres) + DM Sans (corps)
+
+## Structure localStorage
+
+| Clé | Contenu |
+|-----|---------|
+| `fr_onboarding_done` | `'true'` si onboarding terminé |
+| `fr_user` | `{ prenom, specialite, revenuCible, joursFact, charges, tauxPlancher, tauxCible }` |
+| `fr_contacts` | `[{ id, nom, entreprise, canal, dateContact, statut, note, projetId }]` |
+| `fr_projets` | `[{ id, nom, clientId, type, datePrevue, prixFacture, statut, quotas, checklist, sessions, frais, ... }]` |
+
+## Onglets (tab bar fixe en bas)
+
+Studio · Prospection · Projet · Insights · Profil
+
+## Phases de développement
+
+| Phase | Module | État |
+|-------|--------|------|
+| 1 | CSS — Design system complet | ✅ |
+| 2 | Onboarding (3 écrans) | ✅ |
+| 3 | Studio (liste projets + création) | ⬜ |
+| 4 | Prospection (contacts + pipeline) | ⬜ |
+| 5 | Projet — Offre (quotas + checklist) | ⬜ |
+| 6 | Projet — Temps (chrono + sessions) | ⬜ |
+| 7 | Projet — Frais + Bilan | ⬜ |
+| 8 | Insights (métriques globales) | ⬜ |
+| 9 | Profil (édition user + reset) | ⬜ |
+| 10 | Tests PWA iPhone + Mac | ⬜ |
 
 ## Lancer en local
 
-Depuis ce dossier:
-
 ```bash
+cd Codex
 python3 -m http.server 5173 --bind 127.0.0.1
 ```
 
-Puis ouvrir:
-
-```text
-http://127.0.0.1:5173/
-```
+Puis ouvrir : `http://127.0.0.1:5173/`
 
 ## Installation iPhone
 
-Pour tester depuis l'iPhone, l'app peut être publiée sur un hébergement HTTPS statique comme Netlify, Vercel ou GitHub Pages. Ensuite, ouvrir l'adresse dans Safari, puis utiliser Partager > Ajouter à l'écran d'accueil.
+Publier sur Vercel, ouvrir l'URL dans Safari → Partager → Ajouter à l'écran d'accueil.
