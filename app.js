@@ -36,10 +36,12 @@ const Storage = {
 // ════════════════════════════════════════════════════════
 
 const state = {
-  currentView: 'studio',
-  user:        Storage.get('user')     ?? null,
-  contacts:    Storage.get('contacts') ?? [],
-  projets:     Storage.get('projets')  ?? [],
+  currentView:    'studio',
+  user:           Storage.get('user')     ?? null,
+  contacts:       Storage.get('contacts') ?? [],
+  projets:        Storage.get('projets')  ?? [],
+  activeProjetId: null,    // projet sélectionné dans le module Projet
+  projetSubView:  'offre', // sous-onglet actif
 };
 
 const save = {
@@ -162,7 +164,10 @@ function _renderView(view, el) {
       _wireStudio();
       break;
     case 'prospection': el.innerHTML = _viewProspection(); break;
-    case 'projet':      el.innerHTML = _viewProjet();      break;
+    case 'projet':
+      el.innerHTML = _viewProjet();
+      _wireProjet();
+      break;
     case 'insights':    el.innerHTML = _viewInsights();    break;
     case 'profil':
       el.innerHTML = _viewProfil();
@@ -175,6 +180,29 @@ function _renderView(view, el) {
 // ════════════════════════════════════════════════════════
 // MODULE STUDIO — Phase 3
 // ════════════════════════════════════════════════════════
+
+const CAT_COLORS = {
+  admin:    'rgba(30,50,70,0.45)',
+  prepa:    '#C09030',
+  shooting: '#D4700A',
+  trajet:   '#6B8CA8',
+  edition:  '#7B5EA7',
+};
+
+const CHECKLIST_SUGGESTIONS = {
+  mariage:    ['Boîtier principal', 'Boîtier backup', 'Flash speedlite',
+               'Objectif 35mm', 'Objectif 85mm', 'Batteries ×4',
+               'Cartes mémoire ×6', 'Réflecteur', 'Sac photo'],
+  portrait:   ['Boîtier principal', 'Objectif 85mm', 'Réflecteur',
+               'Trépied', 'Fond studio', 'Batteries ×2', 'Cartes mémoire'],
+  corporate:  ['Boîtier principal', 'Objectif 24-70mm', 'Flash studio',
+               'Trépied', 'Fond studio', 'Batteries ×2', 'Cartes mémoire', 'Laptop'],
+  event:      ['Boîtier principal', 'Boîtier backup', 'Flash speedlite',
+               'Objectif 24-70mm', 'Objectif 70-200mm', 'Batteries ×4', 'Cartes mémoire ×4'],
+  commercial: ['Boîtier principal', 'Flash studio', 'Trépied',
+               'Fond studio', 'Objectif 24-70mm', 'Laptop', 'Cartes mémoire'],
+  autre:      ['Boîtier principal', 'Batteries ×2', 'Cartes mémoire'],
+};
 
 const TYPE_LABELS = {
   corporate:  'Corporate',
@@ -441,6 +469,7 @@ function _submitNewProject(e) {
   };
 
   state.projets.unshift(projet);
+  state.activeProjetId = projet.id; // sélectionne le nouveau projet dans le module Projet
   save.projets();
 
   _closeSheet();
@@ -459,10 +488,335 @@ function _viewProspection() {
 }
 
 function _viewProjet() {
+  if (!state.projets.length) {
+    return `
+      <div class="projet-empty">
+        ${_ico_folder_lg()}
+        <p class="empty-title">Aucun projet</p>
+        <p class="empty-sub">Crée un projet depuis Studio<br>pour construire ton offre.</p>
+        <button class="btn-action" id="btnGoCreateProjet" type="button">
+          Créer un projet
+        </button>
+      </div>`;
+  }
+
+  // Initialiser ou valider l'activeProjetId
+  if (!state.activeProjetId || !state.projets.find(p => p.id === state.activeProjetId)) {
+    state.activeProjetId = state.projets[0].id;
+  }
+
+  const projet   = state.projets.find(p => p.id === state.activeProjetId);
+  const subViews = ['offre', 'temps', 'frais', 'bilan'];
+
   return `
-    <div class="empty-state" style="margin:32px 16px;min-height:200px;">
-      <p style="font-size:.8rem;color:rgba(30,50,70,.3);">Module Projet — Phase 5–7</p>
+    <div class="projet-module">
+
+      <!-- Sélecteur projet -->
+      <div class="projet-selector-bar">
+        <select id="projetSelectEl">
+          ${state.projets.map(p => `
+            <option value="${p.id}"${p.id === state.activeProjetId ? ' selected' : ''}>
+              ${_esc(p.nom)}${p.clientNom ? ' · ' + _esc(p.clientNom) : ''}
+            </option>`).join('')}
+        </select>
+      </div>
+
+      <!-- Sous-onglets -->
+      <div class="projet-subtabs">
+        ${subViews.map(v => `
+          <button class="projet-subtab${state.projetSubView === v ? ' is-active' : ''}"
+            data-subview="${v}" type="button">
+            ${v[0].toUpperCase() + v.slice(1)}
+          </button>`).join('')}
+      </div>
+
+      <!-- Contenu sous-vue -->
+      <div id="projetSubView">
+        ${_renderProjetSubView(state.projetSubView, projet)}
+      </div>
+
     </div>`;
+}
+
+// ─── Wiring module Projet ─────────────────────────────
+
+function _wireProjet() {
+  // État vide → créer un projet
+  $('btnGoCreateProjet')?.addEventListener('click', () => {
+    navigateTo('studio');
+    setTimeout(_openNewProjectSheet, 260);
+  });
+
+  // Changement de projet sélectionné
+  $('projetSelectEl')?.addEventListener('change', e => {
+    state.activeProjetId = e.target.value;
+    _refreshProjetSubView();
+  });
+
+  // Sous-onglets
+  document.querySelectorAll('[data-subview]').forEach(btn =>
+    btn.addEventListener('click', e => {
+      const sv = e.currentTarget.dataset.subview;
+      state.projetSubView = sv;
+      document.querySelectorAll('[data-subview]').forEach(b =>
+        b.classList.toggle('is-active', b.dataset.subview === sv)
+      );
+      _refreshProjetSubView();
+    })
+  );
+
+  // Wire la sous-vue courante
+  const projet = _activeProjet();
+  if (projet) _wireProjetSubView(state.projetSubView, projet);
+}
+
+function _activeProjet() {
+  return state.projets.find(p => p.id === state.activeProjetId) ?? null;
+}
+
+function _refreshProjetSubView() {
+  const projet    = _activeProjet();
+  const subViewEl = $('projetSubView');
+  if (!projet || !subViewEl) return;
+  subViewEl.innerHTML = _renderProjetSubView(state.projetSubView, projet);
+  _wireProjetSubView(state.projetSubView, projet);
+}
+
+function _renderProjetSubView(sv, projet) {
+  switch (sv) {
+    case 'offre':  return _subviewOffre(projet);
+    case 'temps':  return _subviewTemps(projet);
+    case 'frais':  return _subviewFrais(projet);
+    case 'bilan':  return _subviewBilan(projet);
+    default:       return '';
+  }
+}
+
+function _wireProjetSubView(sv, projet) {
+  if (sv === 'offre') _wireOffre(projet);
+}
+
+// ════════════════════════════════════════════════════════
+// SOUS-VUE OFFRE — Phase 5
+// ════════════════════════════════════════════════════════
+
+function _subviewOffre(projet) {
+  _ensureChecklist(projet);
+
+  const totalH = _totalQuotaH(projet);
+  const taux   = _calcTauxImplicite(projet, totalH);
+  const tauxCls = taux !== null ? _tauxImplClass(taux) : '';
+
+  const date = projet.datePrevue
+    ? new Date(projet.datePrevue).toLocaleDateString('fr-CH',
+        { day: 'numeric', month: 'short', year: 'numeric' })
+    : '';
+
+  const cats = [
+    ['admin',    'Admin'],
+    ['prepa',    'Prépa'],
+    ['shooting', 'Shooting'],
+    ['trajet',   'Trajet'],
+    ['edition',  'Édition'],
+  ];
+
+  return `
+    <div class="offre-view">
+
+      <!-- Infos + taux implicite -->
+      <div class="offre-section glass-card">
+        <div class="offre-infos-header">
+          <div class="offre-infos-text">
+            <p class="offre-nom">${_esc(projet.nom)}</p>
+            <p class="offre-meta">${[
+              TYPE_LABELS[projet.type],
+              projet.clientNom ? _esc(projet.clientNom) : '',
+              date,
+              projet.prixFacture ? _fmtCHF(projet.prixFacture) : '',
+            ].filter(Boolean).join(' · ')}</p>
+          </div>
+          <div class="taux-impl ${tauxCls}" id="tauxImplCard">
+            <p class="taux-impl-val" id="tauxImplVal">
+              ${taux !== null ? `CHF ${taux}/h` : '—'}
+            </p>
+            <p class="taux-impl-label">taux implicite</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quotas -->
+      <div class="offre-section glass-card">
+        <p class="offre-section-title">Temps estimé</p>
+        ${cats.map(([key, label]) => `
+          <div class="quota-cat-row">
+            <span class="quota-cat-dot" style="background:${CAT_COLORS[key]}"></span>
+            <span class="quota-cat-label">${label}</span>
+            <input class="quota-input" type="number"
+              data-cat="${key}" min="0" step="0.5"
+              value="${projet.quotas[key] ?? 0}" />
+            <select class="quota-unit" data-cat="${key}">
+              <option value="h">h</option>
+              <option value="min">min</option>
+              <option value="j">j (8h)</option>
+            </select>
+          </div>`).join('')}
+        <div class="quota-total-bar">
+          <span>Total estimé</span>
+          <strong id="quotaTotalVal">${_fmtH(totalH)}</strong>
+        </div>
+      </div>
+
+      <!-- Checklist matériel -->
+      <div class="offre-section glass-card">
+        <p class="offre-section-title">Matériel</p>
+        <ul class="checklist">
+          ${projet.checklist.map(item => `
+            <li class="checklist-item${item.checked ? ' is-checked' : ''}">
+              <label class="checklist-label">
+                <input type="checkbox" class="checklist-cb"
+                  data-item-id="${item.id}"
+                  ${item.checked ? 'checked' : ''} />
+                <span>${_esc(item.label)}</span>
+              </label>
+            </li>`).join('')}
+        </ul>
+      </div>
+
+      <!-- CTA -->
+      <button class="btn-action" id="btnStartChrono" type="button">
+        Démarrer le chrono →
+      </button>
+
+    </div>`;
+}
+
+function _wireOffre(projet) {
+  // Quotas — mise à jour temps réel + auto-save
+  document.querySelectorAll('.quota-input, .quota-unit').forEach(el =>
+    el.addEventListener('input', () => _onQuotaChange(projet))
+  );
+
+  // Checklist — auto-save + toggle visuel
+  document.querySelectorAll('.checklist-cb').forEach(cb =>
+    cb.addEventListener('change', e => {
+      const id      = e.target.dataset.itemId;
+      const checked = e.target.checked;
+      e.target.closest('.checklist-item')?.classList.toggle('is-checked', checked);
+      const idx = state.projets.findIndex(p => p.id === projet.id);
+      if (idx !== -1) {
+        const i = state.projets[idx].checklist.findIndex(x => x.id === id);
+        if (i !== -1) state.projets[idx].checklist[i].checked = checked;
+        save.projets();
+      }
+    })
+  );
+
+  // Démarrer le chrono → sous-onglet Temps
+  $('btnStartChrono')?.addEventListener('click', () => {
+    state.projetSubView = 'temps';
+    document.querySelectorAll('[data-subview]').forEach(b =>
+      b.classList.toggle('is-active', b.dataset.subview === 'temps')
+    );
+    _refreshProjetSubView();
+  });
+}
+
+function _onQuotaChange(projet) {
+  const cats = ['admin', 'prepa', 'shooting', 'trajet', 'edition'];
+  const quotas = {};
+  cats.forEach(cat => {
+    const val  = Number(document.querySelector(`.quota-input[data-cat="${cat}"]`)?.value) || 0;
+    const unit = document.querySelector(`.quota-unit[data-cat="${cat}"]`)?.value || 'h';
+    quotas[cat] = _quotaToHours(val, unit);
+  });
+
+  const totalH = Object.values(quotas).reduce((s, h) => s + h, 0);
+  const taux   = totalH > 0 ? Math.round((Number(projet.prixFacture) || 0) / totalH) : null;
+
+  const totEl  = $('quotaTotalVal');
+  const valEl  = $('tauxImplVal');
+  const cardEl = $('tauxImplCard');
+  if (totEl)  totEl.textContent = _fmtH(totalH);
+  if (valEl)  valEl.textContent = taux !== null ? `CHF ${taux}/h` : '—';
+  if (cardEl) cardEl.className  = `taux-impl ${taux !== null ? _tauxImplClass(taux) : ''}`;
+
+  // Auto-save
+  const idx = state.projets.findIndex(p => p.id === projet.id);
+  if (idx !== -1) {
+    state.projets[idx].quotas = quotas;
+    save.projets();
+  }
+}
+
+// ─── Sous-vues stub (Phases 6–7) ─────────────────────
+
+function _subviewTemps(projet) {
+  return `<div class="empty-state" style="margin:24px 16px;min-height:160px;">
+    <p style="font-size:.8rem;color:rgba(30,50,70,.3);">Chrono &amp; sessions — Phase 6</p>
+  </div>`;
+}
+
+function _subviewFrais(projet) {
+  return `<div class="empty-state" style="margin:24px 16px;min-height:160px;">
+    <p style="font-size:.8rem;color:rgba(30,50,70,.3);">Frais — Phase 7</p>
+  </div>`;
+}
+
+function _subviewBilan(projet) {
+  return `<div class="empty-state" style="margin:24px 16px;min-height:160px;">
+    <p style="font-size:.8rem;color:rgba(30,50,70,.3);">Bilan — Phase 7</p>
+  </div>`;
+}
+
+// ─── Helpers Projet ───────────────────────────────────
+
+function _totalQuotaH(projet) {
+  return Object.values(projet.quotas || {})
+    .reduce((s, h) => s + (Number(h) || 0), 0);
+}
+
+function _calcTauxImplicite(projet, totalH) {
+  const h = totalH ?? _totalQuotaH(projet);
+  if (!h) return null;
+  return Math.round((Number(projet.prixFacture) || 0) / h);
+}
+
+function _quotaToHours(value, unit) {
+  if (unit === 'min') return value / 60;
+  if (unit === 'j')   return value * 8;
+  return value;
+}
+
+function _tauxImplClass(taux) {
+  if (!hasTaux()) return '';
+  const { tauxPlancher, tauxCible } = state.user;
+  if (taux >= tauxCible)    return 'is-profit';
+  if (taux >= tauxPlancher) return 'is-warning';
+  return 'is-loss';
+}
+
+function _fmtH(h) {
+  if (!h || h <= 0) return '0h';
+  return (Math.round(h * 10) / 10) + 'h';
+}
+
+function _ensureChecklist(projet) {
+  if (projet.checklist.length > 0) return;
+  const suggestions = CHECKLIST_SUGGESTIONS[projet.type] ?? CHECKLIST_SUGGESTIONS['autre'];
+  projet.checklist = suggestions.map(label => ({ id: _genId(), label, checked: false }));
+  const idx = state.projets.findIndex(p => p.id === projet.id);
+  if (idx !== -1) {
+    state.projets[idx].checklist = projet.checklist;
+    save.projets();
+  }
+}
+
+function _ico_folder_lg() {
+  return `<svg class="empty-icon" width="52" height="52" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="1.3"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+  </svg>`;
 }
 
 function _viewInsights() {
