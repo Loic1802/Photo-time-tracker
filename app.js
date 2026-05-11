@@ -164,7 +164,10 @@ function _renderView(view, el) {
     case 'prospection': el.innerHTML = _viewProspection(); break;
     case 'projet':      el.innerHTML = _viewProjet();      break;
     case 'insights':    el.innerHTML = _viewInsights();    break;
-    case 'profil':      el.innerHTML = _viewProfil();      break;
+    case 'profil':
+      el.innerHTML = _viewProfil();
+      _wireProfilView();
+      break;
     default:            el.innerHTML = '';
   }
 }
@@ -470,39 +473,162 @@ function _viewInsights() {
 }
 
 function _viewProfil() {
-  const u = state.user;
-  if (!u?.prenom) {
-    return `
-      <div class="empty-state" style="margin:32px 16px;min-height:200px;">
-        <div>
-          <p style="font-size:.85rem;font-weight:500;color:rgba(30,50,70,.5);">
-            Profil non configuré
-          </p>
-          <p style="font-size:.78rem;margin-top:6px;color:rgba(30,50,70,.3);">
-            Les comparaisons de taux s'activeront une fois ton taux cible défini.
-          </p>
-          <p style="font-size:.75rem;margin-top:10px;color:rgba(30,50,70,.25);">
-            Module Profil — Phase 9
-          </p>
-        </div>
-      </div>`;
-  }
+  const u = state.user ?? {};
+
+  const specialites = [
+    ['mariage',   'Mariage'],
+    ['corporate', 'Corporate'],
+    ['evenement', 'Événement'],
+    ['packshot',  'Packshot'],
+    ['editorial', 'Éditorial'],
+    ['mixed',     'Mixed'],
+  ];
+
   return `
-    <div class="empty-state" style="margin:32px 16px;min-height:200px;">
-      <div>
-        <p style="font-size:.9rem;font-weight:500;color:rgba(30,50,70,.6);">
-          ${_esc(u.prenom)} · ${_esc(u.specialite ?? '—')}
-        </p>
-        <p style="font-size:.8rem;margin-top:4px;color:rgba(30,50,70,.4);">
-          ${hasTaux()
-            ? `Plancher CHF ${u.tauxPlancher}/h · cible CHF ${u.tauxCible}/h`
-            : 'Taux cible non défini'}
-        </p>
-        <p style="font-size:.75rem;margin-top:10px;color:rgba(30,50,70,.25);">
-          Module Profil — Phase 9
-        </p>
+    <div class="profil-view">
+
+      <!-- ── Moi ── -->
+      <div class="profil-section glass-card">
+        <p class="profil-section-title">Moi</p>
+        <label for="pfPrenom">
+          Prénom
+          <input id="pfPrenom" type="text"
+            placeholder="Ton prénom"
+            value="${_esc(u.prenom ?? '')}"
+            autocomplete="given-name" />
+        </label>
+        <label for="pfSpecialite">
+          Spécialité
+          <select id="pfSpecialite">
+            <option value="">— Sélectionner —</option>
+            ${specialites.map(([v, l]) =>
+              `<option value="${v}"${u.specialite === v ? ' selected' : ''}>${l}</option>`
+            ).join('')}
+          </select>
+        </label>
       </div>
+
+      <!-- ── Objectifs financiers ── -->
+      <div class="profil-section glass-card">
+        <p class="profil-section-title">Objectifs financiers</p>
+        <label for="pfRevenu">
+          Revenu mensuel net visé (CHF)
+          <input id="pfRevenu" type="number"
+            placeholder="0" min="0" step="100"
+            inputmode="numeric"
+            value="${u.revenuCible ?? ''}" />
+        </label>
+        <div class="form-row">
+          <label for="pfJours">
+            Jours fact. / mois
+            <input id="pfJours" type="number"
+              placeholder="15" min="1" max="23" step="1"
+              inputmode="numeric"
+              value="${u.joursFact ?? 15}" />
+          </label>
+          <label for="pfCharges">
+            Charges / mois (CHF)
+            <input id="pfCharges" type="number"
+              placeholder="0" min="0" step="50"
+              inputmode="numeric"
+              value="${u.charges ?? ''}" />
+          </label>
+        </div>
+        <div class="taux-preview" id="tauxPreview">
+          <div class="taux-preview-item">
+            <p class="taux-preview-label">Plancher</p>
+            <p class="taux-preview-value" id="pfPlancherVal">—</p>
+          </div>
+          <div class="taux-preview-sep"></div>
+          <div class="taux-preview-item">
+            <p class="taux-preview-label">Cible</p>
+            <p class="taux-preview-value is-cible" id="pfCibleVal">—</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Enregistrer ── -->
+      <button class="btn-action" id="btnSaveProfil" type="button">
+        Enregistrer
+      </button>
+
+      <!-- ── Données ── -->
+      <div class="profil-section glass-card">
+        <p class="profil-section-title">Données</p>
+        <p class="profil-section-hint">
+          Efface tous tes projets, contacts et réglages.
+        </p>
+        <button class="btn-destructive" id="btnResetFrames" type="button">
+          Réinitialiser Frames
+        </button>
+      </div>
+
     </div>`;
+}
+
+// ─── Profil : wiring ──────────────────────────────────
+
+function _wireProfilView() {
+  ['pfRevenu', 'pfJours', 'pfCharges'].forEach(id =>
+    $(id)?.addEventListener('input', _updateTauxPreview)
+  );
+  _updateTauxPreview();
+
+  $('btnSaveProfil')?.addEventListener('click', _saveProfil);
+
+  $('btnResetFrames')?.addEventListener('click', () => {
+    if (confirm('Supprimer toutes les données Frames ?\nCette action est irréversible.')) {
+      Storage.clearAll();
+      location.reload();
+    }
+  });
+}
+
+function _calcTaux(revenu, jours, charges) {
+  const j = Number(jours) || 15;
+  if (j <= 0) return { plancher: 0, cible: 0 };
+  const plancher = Math.round((Number(revenu) + Number(charges)) / (j * 8));
+  const cible    = Math.round(plancher * 1.3);
+  return { plancher, cible };
+}
+
+function _updateTauxPreview() {
+  const revenu  = Number($('pfRevenu')?.value)  || 0;
+  const jours   = Number($('pfJours')?.value)   || 15;
+  const charges = Number($('pfCharges')?.value) || 0;
+  const { plancher, cible } = _calcTaux(revenu, jours, charges);
+  const pEl = $('pfPlancherVal');
+  const cEl = $('pfCibleVal');
+  if (pEl) pEl.textContent = plancher > 0 ? `CHF ${plancher}/h` : '—';
+  if (cEl) cEl.textContent = cible    > 0 ? `CHF ${cible}/h`    : '—';
+}
+
+function _saveProfil() {
+  const prenom      = $('pfPrenom')?.value.trim()   ?? '';
+  const specialite  = $('pfSpecialite')?.value       ?? '';
+  const revenuCible = Number($('pfRevenu')?.value)  || 0;
+  const joursFact   = Number($('pfJours')?.value)   || 15;
+  const charges     = Number($('pfCharges')?.value) || 0;
+  const { plancher, cible } = _calcTaux(revenuCible, joursFact, charges);
+
+  state.user = {
+    prenom, specialite, revenuCible, joursFact, charges,
+    tauxPlancher: plancher,
+    tauxCible:    cible,
+  };
+  save.user();
+
+  const btn = $('btnSaveProfil');
+  if (btn) {
+    btn.textContent   = 'Sauvegardé ✓';
+    btn.disabled      = true;
+    btn.style.opacity = '.72';
+    setTimeout(() => {
+      btn.textContent   = 'Enregistrer';
+      btn.disabled      = false;
+      btn.style.opacity = '';
+    }, 2000);
+  }
 }
 
 // ════════════════════════════════════════════════════════
