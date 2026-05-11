@@ -335,8 +335,58 @@
   margin: 0 0 28px;
 }
 
-.projet-selector-bar {
-  padding: 12px 16px 0;
+/* Carrousel de chips — sélecteur projet */
+.projet-chips-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 12px 16px;
+  margin: 0 -16px;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+.projet-chips-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.projet-chip {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 9px 14px;
+  border-radius: 99px;
+  background: rgba(255,255,255,0.4);
+  border: 1px solid rgba(255,255,255,0.6);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.projet-chip.is-active {
+  background: linear-gradient(135deg, #F59332, #D4700A);
+  border-color: rgba(213,112,10,0.3);
+  box-shadow: 0 4px 16px rgba(213,112,10,0.35);
+}
+
+.chip-nom {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(20,40,60,0.85);
+  white-space: nowrap;
+}
+
+.chip-client {
+  font-size: 10px;
+  color: rgba(30,50,70,0.45);
+  white-space: nowrap;
+}
+
+.projet-chip.is-active .chip-nom,
+.projet-chip.is-active .chip-client {
+  color: #fff;
 }
 
 .projet-subtabs {
@@ -578,6 +628,235 @@
   text-decoration: line-through;
 }
 
+/* ─── Module Temps — chronomètre ────────────────────── */
+
+.temps-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 0 120px;
+}
+
+.chrono-card {
+  padding: 24px 16px 20px;
+  text-align: center;
+  margin: 0 16px;
+}
+
+.chrono-status {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(30,50,70,0.4);
+  margin: 0 0 8px;
+  transition: color 0.2s ease;
+}
+
+.chrono-display {
+  font-size: clamp(2.8rem, 12vw, 3.4rem);
+  font-weight: 200;
+  color: rgba(20,40,60,0.9);
+  letter-spacing: -2px;
+  font-variant-numeric: tabular-nums;
+  font-family: 'DM Sans', sans-serif;
+  line-height: 1;
+  margin: 0 0 8px;
+}
+
+.chrono-sub {
+  font-size: 11px;
+  color: rgba(30,50,70,0.3);
+  margin: 0;
+  min-height: 16px;
+}
+
+/* Chips catégories chrono */
+.cat-chips-scroll {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 4px 16px 8px;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cat-chips-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.cat-chip {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border-radius: 99px;
+  border: 1px solid transparent;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(20,40,60,0.7);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cat-chip.is-active {
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.15);
+}
+
+/* Boutons chrono */
+.chrono-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+.btn-secondary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 15px 16px;
+  background: rgba(255,255,255,0.55);
+  border: 1px solid rgba(255,255,255,0.75);
+  border-radius: 14px;
+  color: rgba(30,50,70,0.5);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: opacity .15s ease;
+}
+
+.btn-secondary:active { opacity: .8; }
+
+/* Stats mini */
+.chrono-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  padding: 0 16px;
+}
+
+.stat-mini {
+  padding: 10px 8px;
+  text-align: center;
+}
+
+.stat-mini-label {
+  font-size: 8px;
+  font-weight: 700;
+  color: rgba(30,50,70,0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 3px;
+}
+
+.stat-mini-val {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(20,40,60,0.85);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  transition: color .2s ease;
+}
+
+.stat-mini-val.is-good { color: #5AAE82; }
+.stat-mini-val.is-warn { color: #E09050; }
+.stat-mini-val.is-bad  { color: #E07878; }
+
+/* Sessions historique */
+.sessions-section {
+  padding: 4px 16px 0;
+}
+
+.sessions-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.sessions-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(30,50,70,0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0;
+}
+
+.btn-text-danger {
+  font-size: 11px;
+  font-weight: 600;
+  color: #C03030;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.5);
+}
+
+.session-row:last-child { border-bottom: 0; }
+
+.session-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.session-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.session-cat {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(20,40,60,0.85);
+}
+
+.session-date {
+  font-size: 10px;
+  color: rgba(30,50,70,0.35);
+}
+
+.session-duree {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(20,40,60,0.7);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.session-delete {
+  font-size: 16px;
+  line-height: 1;
+  color: rgba(192,48,48,0.4);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.session-delete:active { color: rgba(192,48,48,0.8); }
+
 /* ─── Module Profil ──────────────────────────────────── */
 
 .profil-view {
@@ -679,3 +958,237 @@
   opacity: .8;
   transform: scale(.98);
 }
+
+/* ══════════════════════════════════════════════════════
+   SOUS-VUE FRAIS — Phase 7
+   ══════════════════════════════════════════════════════ */
+
+.frais-view {
+  padding: 12px 16px 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Card totale */
+.frais-total-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+}
+
+.frais-total-label {
+  font-size: .68rem;
+  font-weight: 700;
+  color: rgba(30,50,70,.38);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin: 0;
+}
+
+.frais-total-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: rgba(20,40,60,.85);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  line-height: 1;
+}
+
+/* Liste */
+.frais-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.frais-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 18px;
+  border-bottom: 1px solid rgba(30,50,70,.06);
+}
+
+.frais-row:last-child { border-bottom: none; }
+
+.frais-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.frais-label {
+  font-size: .85rem;
+  font-weight: 500;
+  color: rgba(20,40,60,.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.frais-date {
+  font-size: .72rem;
+  color: rgba(30,50,70,.35);
+  margin-top: 2px;
+}
+
+.frais-montant {
+  font-size: .88rem;
+  font-weight: 600;
+  color: rgba(20,40,60,.75);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.frais-delete {
+  font-size: 16px;
+  line-height: 1;
+  color: rgba(192,48,48,.4);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.frais-delete:active { color: rgba(192,48,48,.8); }
+
+.frais-empty {
+  text-align: center;
+  padding: 28px 16px;
+  color: rgba(30,50,70,.28);
+  font-size: .78rem;
+}
+
+/* ══════════════════════════════════════════════════════
+   SOUS-VUE BILAN — Phase 7
+   ══════════════════════════════════════════════════════ */
+
+.bilan-view {
+  padding: 12px 16px 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bilan-section {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.bilan-section-title {
+  font-size: .65rem;
+  font-weight: 700;
+  color: rgba(30,50,70,.38);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin: 0 0 2px;
+}
+
+.bilan-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.bilan-row-label {
+  font-size: .82rem;
+  color: rgba(30,50,70,.55);
+  flex: 1;
+}
+
+.bilan-row-value {
+  font-size: .88rem;
+  font-weight: 600;
+  color: rgba(20,40,60,.82);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bilan-row-value.is-profit  { color: #2E7D52; }
+.bilan-row-value.is-warn    { color: #E09050; }
+.bilan-row-value.is-loss    { color: #C03030; }
+.bilan-row-value.is-neutral { color: rgba(20,40,60,.45); }
+
+.bilan-divider {
+  height: 1px;
+  background: rgba(30,50,70,.08);
+}
+
+.bilan-row.is-total .bilan-row-label {
+  font-weight: 600;
+  color: rgba(20,40,60,.75);
+}
+.bilan-row.is-total .bilan-row-value {
+  font-size: .94rem;
+}
+
+/* Barre de performance */
+.bilan-bar-wrap {
+  background: rgba(30,50,70,.07);
+  border-radius: 6px;
+  height: 5px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.bilan-bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width .5s cubic-bezier(.25,.8,.25,1);
+}
+.bilan-bar-fill.is-profit  { background: linear-gradient(90deg,#3A9E68,#2E7D52); }
+.bilan-bar-fill.is-warn    { background: linear-gradient(90deg,#E8A860,#D4800A); }
+.bilan-bar-fill.is-loss    { background: linear-gradient(90deg,#D85050,#C03030); }
+.bilan-bar-fill.is-neutral { background: rgba(30,50,70,.22); }
+
+/* Card verdict */
+.bilan-verdict {
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  text-align: center;
+}
+
+.bilan-verdict-label {
+  font-size: .65rem;
+  font-weight: 700;
+  color: rgba(30,50,70,.38);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  margin: 0;
+}
+
+.bilan-verdict-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 4px 0 2px;
+}
+
+.bilan-verdict-icon.is-profit  { background: rgba(46,125,82,.12);  color: #2E7D52; }
+.bilan-verdict-icon.is-warn    { background: rgba(224,144,80,.14); color: #D4800A; }
+.bilan-verdict-icon.is-loss    { background: rgba(192,48,48,.1);   color: #C03030; }
+.bilan-verdict-icon.is-neutral { background: rgba(30,50,70,.07);   color: rgba(30,50,70,.4); }
+
+.bilan-verdict-text {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.bilan-verdict-text.is-profit  { color: #2E7D52; }
+.bilan-verdict-text.is-warn    { color: #D4800A; }
+.bilan-verdict-text.is-loss    { color: #C03030; }
+.bilan-verdict-text.is-neutral { color: rgba(20,40,60,.5); }

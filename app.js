@@ -32,6 +32,19 @@ const Storage = {
 };
 
 // ════════════════════════════════════════════════════════
+// CATEGORIES — couleurs et labels définitifs
+// ════════════════════════════════════════════════════════
+
+const CATEGORIES = {
+  admin:     { label: 'Admin',       color: '#8AAAC8', bg: 'rgba(138,170,200,0.18)' },
+  prepa:     { label: 'Préparation', color: '#9B7EC8', bg: 'rgba(155,126,200,0.18)' },
+  shooting:  { label: 'Shooting',    color: '#E09050', bg: 'rgba(224,144,80,0.18)'  },
+  trajet:    { label: 'Trajet',      color: '#6AAAD4', bg: 'rgba(106,170,212,0.18)' },
+  edition:   { label: 'Édition',     color: '#5AAE82', bg: 'rgba(90,174,130,0.18)'  },
+  revisions: { label: 'Révisions',   color: '#E07878', bg: 'rgba(224,120,120,0.18)' },
+};
+
+// ════════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════════
 
@@ -80,6 +93,15 @@ function _esc(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+// ════════════════════════════════════════════════════════
+// TIMER — état module-level (survit à la navigation)
+// ════════════════════════════════════════════════════════
+
+let _timerInterval = null;
+let _timerStart    = null;
+let _timerCat      = 'shooting';
+let _timerSeconds  = 0;
 
 // ════════════════════════════════════════════════════════
 // SHELL — navigation + topbar
@@ -181,13 +203,10 @@ function _renderView(view, el) {
 // MODULE STUDIO — Phase 3
 // ════════════════════════════════════════════════════════
 
-const CAT_COLORS = {
-  admin:    'rgba(30,50,70,0.45)',
-  prepa:    '#C09030',
-  shooting: '#D4700A',
-  trajet:   '#6B8CA8',
-  edition:  '#7B5EA7',
-};
+// Dérivé de CATEGORIES pour compatibilité avec _subviewOffre
+const CAT_COLORS = Object.fromEntries(
+  Object.entries(CATEGORIES).map(([k, v]) => [k, v.color])
+);
 
 const CHECKLIST_SUGGESTIONS = {
   mariage:    ['Boîtier principal', 'Boîtier backup', 'Flash speedlite',
@@ -333,7 +352,7 @@ function _statutPill(p) {
 // ─── Bottom sheet — nouveau projet ───────────────────────
 
 function _openNewProjectSheet() {
-  if ($('newProjectSheet')) return; // déjà ouvert
+  if (document.querySelector('.bottom-sheet')) return; // déjà ouvert
 
   const overlay = document.createElement('div');
   overlay.className = 'sheet-overlay';
@@ -408,7 +427,7 @@ function _openNewProjectSheet() {
 
 function _closeSheet() {
   const overlay = $('sheetOverlay');
-  const sheet   = $('newProjectSheet');
+  const sheet   = document.querySelector('.bottom-sheet');
   if (!sheet) return;
   overlay?.classList.remove('is-visible');
   sheet.classList.remove('is-open');
@@ -511,14 +530,14 @@ function _viewProjet() {
   return `
     <div class="projet-module">
 
-      <!-- Sélecteur projet -->
-      <div class="projet-selector-bar">
-        <select id="projetSelectEl">
-          ${state.projets.map(p => `
-            <option value="${p.id}"${p.id === state.activeProjetId ? ' selected' : ''}>
-              ${_esc(p.nom)}${p.clientNom ? ' · ' + _esc(p.clientNom) : ''}
-            </option>`).join('')}
-        </select>
+      <!-- Carrousel chips projet -->
+      <div class="projet-chips-scroll" id="projetChips">
+        ${state.projets.map(p => `
+          <button class="projet-chip${p.id === state.activeProjetId ? ' is-active' : ''}"
+            data-id="${p.id}" type="button">
+            <span class="chip-nom">${_esc(p.nom)}</span>
+            ${p.clientNom ? `<span class="chip-client">${_esc(p.clientNom)}</span>` : ''}
+          </button>`).join('')}
       </div>
 
       <!-- Sous-onglets -->
@@ -547,11 +566,21 @@ function _wireProjet() {
     setTimeout(_openNewProjectSheet, 260);
   });
 
-  // Changement de projet sélectionné
-  $('projetSelectEl')?.addEventListener('change', e => {
-    state.activeProjetId = e.target.value;
-    _refreshProjetSubView();
-  });
+  // Chips projet — sélection
+  document.querySelectorAll('.projet-chip').forEach(chip =>
+    chip.addEventListener('click', e => {
+      const id = e.currentTarget.dataset.id;
+      if (id === state.activeProjetId) return;
+      state.activeProjetId = id;
+      document.querySelectorAll('.projet-chip').forEach(c =>
+        c.classList.toggle('is-active', c.dataset.id === id)
+      );
+      _scrollActiveChip();
+      _refreshProjetSubView();
+    })
+  );
+  // Centrer la chip active au chargement
+  setTimeout(_scrollActiveChip, 80);
 
   // Sous-onglets
   document.querySelectorAll('[data-subview]').forEach(btn =>
@@ -568,6 +597,11 @@ function _wireProjet() {
   // Wire la sous-vue courante
   const projet = _activeProjet();
   if (projet) _wireProjetSubView(state.projetSubView, projet);
+}
+
+function _scrollActiveChip() {
+  document.querySelector('.projet-chip.is-active')
+    ?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
 }
 
 function _activeProjet() {
@@ -593,7 +627,9 @@ function _renderProjetSubView(sv, projet) {
 }
 
 function _wireProjetSubView(sv, projet) {
-  if (sv === 'offre') _wireOffre(projet);
+  if (sv === 'offre')  _wireOffre(projet);
+  if (sv === 'temps')  _wireTemps(projet);
+  if (sv === 'frais')  _wireFrais(projet);
 }
 
 // ════════════════════════════════════════════════════════
@@ -750,22 +786,687 @@ function _onQuotaChange(projet) {
 
 // ─── Sous-vues stub (Phases 6–7) ─────────────────────
 
+// ════════════════════════════════════════════════════════
+// SOUS-VUE TEMPS — Phase 6
+// ════════════════════════════════════════════════════════
+
 function _subviewTemps(projet) {
-  return `<div class="empty-state" style="margin:24px 16px;min-height:160px;">
-    <p style="font-size:.8rem;color:rgba(30,50,70,.3);">Chrono &amp; sessions — Phase 6</p>
-  </div>`;
+  return `
+    <div class="temps-view">
+
+      <!-- Chrono -->
+      <div class="glass-card chrono-card">
+        <p class="chrono-status" id="chronoStatus">Prêt</p>
+        <p class="chrono-display" id="chronoDisplay">00:00:00</p>
+        <p class="chrono-sub" id="chronoSub"></p>
+      </div>
+
+      <!-- Chips catégories -->
+      <div class="cat-chips-scroll" id="catChips">
+        ${_renderCatChips(_timerCat)}
+      </div>
+
+      <!-- Boutons -->
+      <div class="chrono-actions">
+        <button class="btn-action" id="btnToggleChrono" type="button">
+          Démarrer
+        </button>
+        <button class="btn-secondary" id="btnManuelTime" type="button">
+          ${_ico_clock_plus()}
+          Manuel
+        </button>
+      </div>
+
+      <!-- Stats -->
+      <div class="chrono-stats">
+        <div class="glass-card stat-mini">
+          <p class="stat-mini-label">Effectif</p>
+          <p class="stat-mini-val" id="statEffectif">${_statEffectif(projet)}</p>
+        </div>
+        <div class="glass-card stat-mini">
+          <p class="stat-mini-label">Quota</p>
+          <p class="stat-mini-val" id="statQuota">${_statQuota(projet)}</p>
+        </div>
+        <div class="glass-card stat-mini">
+          <p class="stat-mini-label">CHF/h réel</p>
+          <p class="stat-mini-val ${_tauxReelClass(projet)}" id="statTaux">${_statTauxReel(projet)}</p>
+        </div>
+      </div>
+
+      <!-- Sessions -->
+      <div class="sessions-section">
+        <div class="sessions-head">
+          <p class="sessions-title">Sessions</p>
+          ${(projet.sessions ?? []).length > 0
+            ? `<button class="btn-text-danger" id="btnClearSessions">Tout effacer</button>`
+            : ''}
+        </div>
+        <div id="sessionsList">
+          ${_renderSessionsList(projet)}
+        </div>
+      </div>
+
+    </div>`;
 }
+
+function _wireTemps(projet) {
+  _wireCatChips(projet);
+
+  $('btnToggleChrono')?.addEventListener('click', () => {
+    if (_timerInterval) _stopChrono(projet);
+    else                _startChrono();
+  });
+
+  $('btnManuelTime')?.addEventListener('click', () => _openManualTimeSheet(projet));
+
+  $('btnClearSessions')?.addEventListener('click', () => {
+    if (confirm('Effacer toutes les sessions de ce projet ?')) {
+      const idx = state.projets.findIndex(p => p.id === projet.id);
+      if (idx !== -1) {
+        state.projets[idx].sessions = [];
+        save.projets();
+        _refreshTempsDisplay(state.projets[idx]);
+      }
+    }
+  });
+
+  _wireSessionDeletes(projet);
+
+  // Restaurer l'état si le chrono tourne déjà
+  if (_timerInterval) {
+    const btn = $('btnToggleChrono');
+    if (btn) btn.textContent = 'Arrêter';
+    _updateChronoStatus();
+    _tickTimer();
+  }
+}
+
+function _wireCatChips(projet) {
+  document.querySelectorAll('.cat-chip').forEach(chip =>
+    chip.addEventListener('click', e => {
+      const cat = e.currentTarget.dataset.cat;
+      _timerCat = cat;
+      const el = $('catChips');
+      if (el) {
+        el.innerHTML = _renderCatChips(cat);
+        _wireCatChips(projet);
+      }
+      if (_timerInterval) _updateChronoStatus();
+    })
+  );
+}
+
+function _renderCatChips(activeCat) {
+  return Object.entries(CATEGORIES).map(([key, cat]) => `
+    <button
+      class="cat-chip${activeCat === key ? ' is-active' : ''}"
+      data-cat="${key}"
+      style="${activeCat === key
+        ? `background:${cat.color};border-color:${cat.color};`
+        : `background:${cat.bg};border-color:${cat.color}44;`}"
+      type="button">
+      ${cat.label}
+    </button>`).join('');
+}
+
+function _startChrono() {
+  _timerStart    = Date.now() - (_timerSeconds * 1000);
+  _timerInterval = setInterval(_tickTimer, 1000);
+  const btn = $('btnToggleChrono');
+  if (btn) btn.textContent = 'Arrêter';
+  _updateChronoStatus();
+}
+
+function _stopChrono(projet) {
+  clearInterval(_timerInterval);
+  _timerInterval = null;
+
+  const dureeMin = Math.max(1, Math.round(_timerSeconds / 60));
+  const session  = {
+    id:        _genId(),
+    categorie: _timerCat,
+    duree:     dureeMin,
+    date:      new Date().toISOString(),
+    type:      'chrono',
+  };
+
+  const idx = state.projets.findIndex(p => p.id === projet.id);
+  if (idx !== -1) {
+    state.projets[idx].sessions.push(session);
+    save.projets();
+  }
+
+  _timerSeconds = 0;
+  _timerStart   = null;
+
+  const btn      = $('btnToggleChrono');
+  const statusEl = $('chronoStatus');
+  const displayEl= $('chronoDisplay');
+  const subEl    = $('chronoSub');
+  if (btn)      btn.textContent      = 'Démarrer';
+  if (displayEl)displayEl.textContent= '00:00:00';
+  if (subEl)    subEl.textContent    = '';
+  if (statusEl) {
+    statusEl.textContent = 'Prêt';
+    statusEl.classList.remove('is-active');
+    statusEl.style.color = '';
+  }
+
+  if (idx !== -1) _refreshTempsDisplay(state.projets[idx]);
+}
+
+function _tickTimer() {
+  _timerSeconds = Math.floor((Date.now() - _timerStart) / 1000);
+  const h = Math.floor(_timerSeconds / 3600);
+  const m = Math.floor((_timerSeconds % 3600) / 60);
+  const s = _timerSeconds % 60;
+  const el = $('chronoDisplay');
+  if (el) el.textContent = [h, m, s].map(n => String(n).padStart(2, '0')).join(':');
+}
+
+function _updateChronoStatus() {
+  const cat      = CATEGORIES[_timerCat] ?? { label: _timerCat, color: '#D4700A' };
+  const statusEl = $('chronoStatus');
+  const subEl    = $('chronoSub');
+  if (statusEl) {
+    statusEl.textContent = `● ${cat.label} EN COURS`;
+    statusEl.classList.add('is-active');
+    statusEl.style.color = cat.color;
+  }
+  if (subEl) subEl.textContent = 'Session en cours…';
+}
+
+function _refreshTempsDisplay(projet) {
+  const el = $('sessionsList');
+  if (el) {
+    el.innerHTML = _renderSessionsList(projet);
+    _wireSessionDeletes(projet);
+  }
+  if ($('statEffectif')) $('statEffectif').textContent = _statEffectif(projet);
+  if ($('statQuota'))    $('statQuota').textContent    = _statQuota(projet);
+  const tauxEl = $('statTaux');
+  if (tauxEl) {
+    tauxEl.textContent = _statTauxReel(projet);
+    tauxEl.className   = `stat-mini-val ${_tauxReelClass(projet)}`;
+  }
+  // Bouton "Tout effacer" — apparaît/disparaît selon présence de sessions
+  const head = document.querySelector('.sessions-head');
+  if (head) {
+    const existing = $('btnClearSessions');
+    if ((projet.sessions ?? []).length > 0 && !existing) {
+      const btn = document.createElement('button');
+      btn.className   = 'btn-text-danger';
+      btn.id          = 'btnClearSessions';
+      btn.textContent = 'Tout effacer';
+      btn.addEventListener('click', () => {
+        if (confirm('Effacer toutes les sessions de ce projet ?')) {
+          const idx = state.projets.findIndex(p => p.id === projet.id);
+          if (idx !== -1) {
+            state.projets[idx].sessions = [];
+            save.projets();
+            _refreshTempsDisplay(state.projets[idx]);
+          }
+        }
+      });
+      head.appendChild(btn);
+    } else if ((projet.sessions ?? []).length === 0 && existing) {
+      existing.remove();
+    }
+  }
+}
+
+function _wireSessionDeletes(projet) {
+  document.querySelectorAll('.session-delete').forEach(btn =>
+    btn.addEventListener('click', e => {
+      const id  = e.currentTarget.dataset.sessionId;
+      const idx = state.projets.findIndex(p => p.id === projet.id);
+      if (idx !== -1) {
+        state.projets[idx].sessions = state.projets[idx].sessions.filter(s => s.id !== id);
+        save.projets();
+        _refreshTempsDisplay(state.projets[idx]);
+      }
+    })
+  );
+}
+
+function _renderSessionsList(projet) {
+  const sessions = [...(projet.sessions ?? [])].reverse();
+  if (!sessions.length) {
+    return `<p style="font-size:.78rem;color:rgba(30,50,70,.3);padding:10px 0;">
+      Aucune session enregistrée.</p>`;
+  }
+  return sessions.map(s => {
+    const cat  = CATEGORIES[s.categorie] ?? { label: s.categorie, color: 'rgba(30,50,70,.4)' };
+    const date = new Date(s.date).toLocaleDateString('fr-CH', { day: 'numeric', month: 'short' });
+    return `
+      <div class="session-row">
+        <div class="session-dot" style="background:${cat.color}"></div>
+        <div class="session-info">
+          <span class="session-cat">${cat.label}</span>
+          <span class="session-date">${date}${s.type === 'manuel' ? ' · Manuel' : ''}</span>
+        </div>
+        <span class="session-duree">${_fmtDuree(s.duree)}</span>
+        <button class="session-delete" data-session-id="${s.id}"
+          type="button" aria-label="Supprimer">×</button>
+      </div>`;
+  }).join('');
+}
+
+// ─── Stats Temps ──────────────────────────────────────
+
+function _statEffectif(projet) {
+  const total = (projet.sessions ?? []).reduce((s, x) => s + (Number(x.duree) || 0), 0);
+  return _fmtDuree(total);
+}
+
+function _statQuota(projet) {
+  const h = _totalQuotaH(projet);
+  return h > 0 ? _fmtDuree(Math.round(h * 60)) : '—';
+}
+
+function _statTauxReel(projet) {
+  const totalMin = (projet.sessions ?? []).reduce((s, x) => s + (Number(x.duree) || 0), 0);
+  if (totalMin < 1 || !projet.prixFacture) return '—';
+  return Math.round(Number(projet.prixFacture) / (totalMin / 60)) + ' CHF/h';
+}
+
+function _tauxReelClass(projet) {
+  const totalMin = (projet.sessions ?? []).reduce((s, x) => s + (Number(x.duree) || 0), 0);
+  if (totalMin < 1 || !hasTaux()) return '';
+  const taux = Math.round(Number(projet.prixFacture) / (totalMin / 60));
+  const { tauxPlancher, tauxCible } = state.user;
+  if (taux >= tauxCible)    return 'is-good';
+  if (taux >= tauxPlancher) return 'is-warn';
+  return 'is-bad';
+}
+
+function _fmtDuree(min) {
+  if (!min || min <= 0) return '0 min';
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
+}
+
+// ─── Bottom sheet — ajout manuel ─────────────────────
+
+function _openManualTimeSheet(projet) {
+  if (document.querySelector('.bottom-sheet')) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'sheet-overlay';
+  overlay.id = 'sheetOverlay';
+  overlay.addEventListener('click', _closeSheet);
+
+  const sheet = document.createElement('div');
+  sheet.className = 'bottom-sheet';
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h2 class="sheet-title">Ajout manuel</h2>
+      <button class="icon-button" id="closeManualSheet" type="button" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="sheet-form">
+      <label for="mtCat">
+        Catégorie
+        <select id="mtCat">
+          ${Object.entries(CATEGORIES).map(([k, v]) =>
+            `<option value="${k}"${k === _timerCat ? ' selected' : ''}>${v.label}</option>`
+          ).join('')}
+        </select>
+      </label>
+      <div class="form-row">
+        <label for="mtDuree">
+          Durée
+          <input id="mtDuree" type="number" min="1" step="1"
+            value="30" inputmode="numeric" />
+        </label>
+        <label for="mtUnite">
+          Unité
+          <select id="mtUnite">
+            <option value="min">minutes</option>
+            <option value="h">heures</option>
+            <option value="j">jours</option>
+          </select>
+        </label>
+      </div>
+      <button class="btn-action sheet-submit" id="btnAddManual" type="button">
+        Ajouter
+      </button>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(sheet);
+
+  sheet.querySelector('#closeManualSheet').addEventListener('click', _closeSheet);
+
+  sheet.querySelector('#btnAddManual').addEventListener('click', () => {
+    const cat   = $('mtCat')?.value   ?? 'shooting';
+    const val   = Number($('mtDuree')?.value) || 30;
+    const unite = $('mtUnite')?.value ?? 'min';
+    let minutes;
+    if (unite === 'h') minutes = Math.round(val * 60);
+    else if (unite === 'j') minutes = Math.round(val * 480);
+    else minutes = Math.round(val);
+    if (minutes < 1) minutes = 1;
+
+    const session = {
+      id:        _genId(),
+      categorie: cat,
+      duree:     minutes,
+      date:      new Date().toISOString(),
+      type:      'manuel',
+    };
+
+    const idx = state.projets.findIndex(p => p.id === projet.id);
+    if (idx !== -1) {
+      state.projets[idx].sessions.push(session);
+      save.projets();
+      _closeSheet();
+      setTimeout(() => _refreshTempsDisplay(state.projets[idx]), 360);
+    } else {
+      _closeSheet();
+    }
+  });
+
+  requestAnimationFrame(() => {
+    overlay.classList.add('is-visible');
+    sheet.classList.add('is-open');
+  });
+
+  setTimeout(() => $('mtDuree')?.focus(), 340);
+}
+
+// ════════════════════════════════════════════════════════
+// SOUS-VUE FRAIS — Phase 7
+// ════════════════════════════════════════════════════════
 
 function _subviewFrais(projet) {
-  return `<div class="empty-state" style="margin:24px 16px;min-height:160px;">
-    <p style="font-size:.8rem;color:rgba(30,50,70,.3);">Frais — Phase 7</p>
-  </div>`;
+  const frais = projet.frais ?? [];
+  const total = frais.reduce((s, f) => s + (Number(f.montant) || 0), 0);
+
+  const listHTML = frais.length
+    ? `<div class="frais-list">
+        ${[...frais].reverse().map(f => {
+          const d = new Date(f.date).toLocaleDateString('fr-CH', { day: 'numeric', month: 'short' });
+          return `
+            <div class="frais-row">
+              <div class="frais-info">
+                <div class="frais-label">${_esc(f.label)}</div>
+                <div class="frais-date">${d}</div>
+              </div>
+              <span class="frais-montant">${_fmtCHF(f.montant)}</span>
+              <button class="frais-delete" data-frais-id="${f.id}"
+                type="button" aria-label="Supprimer">×</button>
+            </div>`;
+        }).join('')}
+      </div>`
+    : `<div class="frais-empty">Aucun frais enregistré.</div>`;
+
+  return `
+    <div class="frais-view">
+
+      <!-- Carte total -->
+      <div class="glass-card frais-total-card">
+        <p class="frais-total-label">Total frais</p>
+        <p class="frais-total-value">${total > 0 ? _fmtCHF(total) : '—'}</p>
+      </div>
+
+      <!-- Liste -->
+      <div class="glass-card" id="fraisList">
+        ${listHTML}
+      </div>
+
+      <!-- CTA -->
+      <button class="btn-action" id="btnAddFrais" type="button">
+        + Ajouter un frais
+      </button>
+
+    </div>`;
 }
 
+function _wireFrais(projet) {
+  $('btnAddFrais')?.addEventListener('click', () => _openFraisSheet(projet));
+  _wireFraisDeletes(projet);
+}
+
+function _wireFraisDeletes(projet) {
+  document.querySelectorAll('.frais-delete').forEach(btn =>
+    btn.addEventListener('click', e => {
+      const id  = e.currentTarget.dataset.fraisId;
+      const idx = state.projets.findIndex(p => p.id === projet.id);
+      if (idx !== -1) {
+        state.projets[idx].frais = state.projets[idx].frais.filter(f => f.id !== id);
+        save.projets();
+        _refreshFraisDisplay(state.projets[idx]);
+      }
+    })
+  );
+}
+
+function _refreshFraisDisplay(projet) {
+  const subViewEl = $('projetSubView');
+  if (!subViewEl) return;
+  subViewEl.innerHTML = _subviewFrais(projet);
+  _wireFrais(projet);
+}
+
+function _openFraisSheet(projet) {
+  if (document.querySelector('.bottom-sheet')) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'sheet-overlay';
+  overlay.id = 'sheetOverlay';
+  overlay.addEventListener('click', _closeSheet);
+
+  const sheet = document.createElement('div');
+  sheet.className = 'bottom-sheet';
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h2 class="sheet-title">Ajouter un frais</h2>
+      <button class="icon-button" id="closeFraisSheet" type="button" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="sheet-form">
+      <label for="fraisLabelInput">
+        Description
+        <input id="fraisLabelInput" type="text"
+          placeholder="Ex. Location véhicule"
+          autocapitalize="sentences" autocomplete="off" />
+      </label>
+      <label for="fraisMontantInput">
+        Montant (CHF)
+        <input id="fraisMontantInput" type="number"
+          min="0" step="0.01" placeholder="0.00"
+          inputmode="decimal" />
+      </label>
+      <button class="btn-action sheet-submit" id="btnSaveFrais" type="button">
+        Ajouter
+      </button>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(sheet);
+
+  sheet.querySelector('#closeFraisSheet').addEventListener('click', _closeSheet);
+
+  sheet.querySelector('#btnSaveFrais').addEventListener('click', () => {
+    const label   = $('fraisLabelInput')?.value.trim() ?? '';
+    const montant = Number($('fraisMontantInput')?.value) || 0;
+    if (!label)      { $('fraisLabelInput')?.focus();   return; }
+    if (montant <= 0) { $('fraisMontantInput')?.focus(); return; }
+
+    const fraisEntry = {
+      id:      _genId(),
+      label,
+      montant,
+      date:    new Date().toISOString(),
+    };
+
+    const idx = state.projets.findIndex(p => p.id === projet.id);
+    if (idx !== -1) {
+      state.projets[idx].frais.push(fraisEntry);
+      save.projets();
+      _closeSheet();
+      setTimeout(() => _refreshFraisDisplay(state.projets[idx]), 360);
+    } else {
+      _closeSheet();
+    }
+  });
+
+  requestAnimationFrame(() => {
+    overlay.classList.add('is-visible');
+    sheet.classList.add('is-open');
+  });
+
+  setTimeout(() => $('fraisLabelInput')?.focus(), 340);
+}
+
+// ════════════════════════════════════════════════════════
+// SOUS-VUE BILAN — Phase 7
+// ════════════════════════════════════════════════════════
+
 function _subviewBilan(projet) {
-  return `<div class="empty-state" style="margin:24px 16px;min-height:160px;">
-    <p style="font-size:.8rem;color:rgba(30,50,70,.3);">Bilan — Phase 7</p>
-  </div>`;
+  // ── Données brutes ──
+  const prixFacture  = Number(projet.prixFacture) || 0;
+  const totalFrais   = (projet.frais ?? []).reduce((s, f) => s + (Number(f.montant) || 0), 0);
+  const revenuNet    = prixFacture - totalFrais;
+
+  const totalMin     = (projet.sessions ?? []).reduce((s, x) => s + (Number(x.duree) || 0), 0);
+  const heuresEff    = totalMin / 60;
+  const tauxReel     = heuresEff > 0 && prixFacture > 0
+    ? Math.round(prixFacture / heuresEff)
+    : null;
+
+  const totalQuotaH  = _totalQuotaH(projet);
+  const tauxOffre    = totalQuotaH > 0 && prixFacture > 0
+    ? Math.round(prixFacture / totalQuotaH)
+    : null;
+
+  // ── Calcul de la classe (profit / warn / loss / neutral) ──
+  function _cls(taux) {
+    if (taux === null || !hasTaux()) return 'is-neutral';
+    const { tauxPlancher, tauxCible } = state.user;
+    if (taux >= tauxCible)    return 'is-profit';
+    if (taux >= tauxPlancher) return 'is-warn';
+    return 'is-loss';
+  }
+
+  // Référence : taux réel s'il existe, sinon taux offre
+  const refTaux  = tauxReel ?? tauxOffre;
+  const clsBilan = _cls(refTaux);
+
+  // Barre de performance (% du taux cible, plafonnée à 100%)
+  let barPct = 0;
+  if (refTaux !== null && hasTaux() && state.user.tauxCible > 0) {
+    barPct = Math.min(100, Math.round((refTaux / state.user.tauxCible) * 100));
+  }
+
+  // Verdict
+  const verdicts = {
+    'is-profit':  { icon: '✓', text: 'Projet rentable'      },
+    'is-warn':    { icon: '≈', text: 'Marge serrée'          },
+    'is-loss':    { icon: '↓', text: 'Sous le plancher'      },
+    'is-neutral': { icon: '○', text: 'Données incomplètes'   },
+  };
+  const v = verdicts[clsBilan];
+
+  // Classe de la valeur revenu net
+  const clsNet = prixFacture <= 0 ? 'is-neutral'
+    : revenuNet < 0 ? 'is-loss'
+    : 'is-profit';
+
+  return `
+    <div class="bilan-view">
+
+      <!-- ── CA & frais ── -->
+      <div class="glass-card bilan-section">
+        <p class="bilan-section-title">Chiffre d'affaires</p>
+        <div class="bilan-row">
+          <span class="bilan-row-label">Prix facturé</span>
+          <span class="bilan-row-value">
+            ${prixFacture > 0 ? _fmtCHF(prixFacture) : '—'}
+          </span>
+        </div>
+        <div class="bilan-row">
+          <span class="bilan-row-label">Total frais</span>
+          <span class="bilan-row-value ${totalFrais > 0 ? 'is-loss' : 'is-neutral'}">
+            ${totalFrais > 0 ? _fmtCHF(totalFrais) : '—'}
+          </span>
+        </div>
+        <div class="bilan-divider"></div>
+        <div class="bilan-row is-total">
+          <span class="bilan-row-label">Revenu net</span>
+          <span class="bilan-row-value ${clsNet}">
+            ${prixFacture > 0 ? _fmtCHF(revenuNet) : '—'}
+          </span>
+        </div>
+      </div>
+
+      <!-- ── Temps ── -->
+      <div class="glass-card bilan-section">
+        <p class="bilan-section-title">Temps</p>
+        <div class="bilan-row">
+          <span class="bilan-row-label">Effectif (sessions)</span>
+          <span class="bilan-row-value">
+            ${heuresEff > 0 ? _fmtDuree(totalMin) : '—'}
+          </span>
+        </div>
+        <div class="bilan-row">
+          <span class="bilan-row-label">Quota offre</span>
+          <span class="bilan-row-value">
+            ${totalQuotaH > 0 ? _fmtH(totalQuotaH) : '—'}
+          </span>
+        </div>
+      </div>
+
+      <!-- ── Taux horaire ── -->
+      <div class="glass-card bilan-section">
+        <p class="bilan-section-title">Taux horaire</p>
+        <div class="bilan-row">
+          <span class="bilan-row-label">Taux offre (quotas)</span>
+          <span class="bilan-row-value">
+            ${tauxOffre !== null ? tauxOffre + ' CHF/h' : '—'}
+          </span>
+        </div>
+        <div class="bilan-row">
+          <span class="bilan-row-label">Taux réel (sessions)</span>
+          <span class="bilan-row-value ${_cls(tauxReel)}">
+            ${tauxReel !== null ? tauxReel + ' CHF/h' : '—'}
+          </span>
+        </div>
+        ${hasTaux() ? `
+        <div class="bilan-divider"></div>
+        <div class="bilan-row">
+          <span class="bilan-row-label">Plancher</span>
+          <span class="bilan-row-value is-neutral">${state.user.tauxPlancher} CHF/h</span>
+        </div>
+        <div class="bilan-row">
+          <span class="bilan-row-label">Cible</span>
+          <span class="bilan-row-value is-profit">${state.user.tauxCible} CHF/h</span>
+        </div>` : ''}
+        ${barPct > 0 ? `
+        <div class="bilan-bar-wrap">
+          <div class="bilan-bar-fill ${clsBilan}" style="width:${barPct}%"></div>
+        </div>` : ''}
+      </div>
+
+      <!-- ── Verdict ── -->
+      <div class="glass-card bilan-verdict">
+        <p class="bilan-verdict-label">Verdict</p>
+        <div class="bilan-verdict-icon ${clsBilan}">${v.icon}</div>
+        <p class="bilan-verdict-text ${clsBilan}">${v.text}</p>
+      </div>
+
+    </div>`;
 }
 
 // ─── Helpers Projet ───────────────────────────────────
