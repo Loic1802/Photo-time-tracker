@@ -777,9 +777,10 @@
 }
 
 .chrono-card {
-  padding: 24px 16px 20px;
+  padding: 20px 16px;
   text-align: center;
   margin: 0 16px;
+  overflow: hidden;
 }
 
 .chrono-status {
@@ -793,14 +794,17 @@
 }
 
 .chrono-display {
-  font-size: clamp(2.8rem, 12vw, 3.4rem);
+  font-size: clamp(2.4rem, 10vw, 3rem);
   font-weight: 200;
   color: rgba(20,40,60,0.9);
-  letter-spacing: -2px;
+  letter-spacing: -1px;
   font-variant-numeric: tabular-nums;
   font-family: 'DM Sans', sans-serif;
   line-height: 1;
   margin: 0 0 8px;
+  text-align: center;
+  width: 100%;
+  display: block;
 }
 
 .chrono-sub {
@@ -808,6 +812,78 @@
   color: rgba(30,50,70,0.3);
   margin: 0;
   min-height: 16px;
+}
+
+/* ─── Barres de progression quotas (Temps) ───────────── */
+
+.quota-bars {
+  padding: 12px 16px 0;
+}
+
+.quota-bars-title {
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(30,50,70,0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0 0 10px;
+}
+
+.quota-bars-empty {
+  font-size: 11px;
+  color: rgba(30,50,70,0.3);
+  margin: 0;
+  padding-bottom: 4px;
+}
+
+.quota-row {
+  margin-bottom: 10px;
+}
+
+.quota-row-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+}
+
+.quota-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* .quota-cat-label déjà défini (partagé Offre) */
+
+.quota-time {
+  font-size: 11px;
+  color: rgba(30,50,70,0.4);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.quota-time.is-over {
+  color: #E07878;
+  font-weight: 600;
+}
+
+.quota-track {
+  height: 4px;
+  background: rgba(30,50,70,0.08);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.quota-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.5s ease;
+  max-width: 100%;
+}
+
+.quota-fill.is-over {
+  background: #E07878 !important;
 }
 
 /* Chips catégories chrono */

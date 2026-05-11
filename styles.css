@@ -54,20 +54,18 @@
 }
 
 html {
-  min-height: 100%;
-  overflow-x: hidden;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Fond dégradé fixé — couvre tout l'écran en permanence */
 body {
-  min-height: 100vh;
+  height: 100%;
   margin: 0;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  overflow-x: hidden;
-  overscroll-behavior: none;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
   background: linear-gradient(160deg, #C9D6E3 0%, #B8CADB 40%, #A8BDD0 100%);
   background-attachment: fixed;
 }
@@ -180,10 +178,14 @@ img {
    ════════════════════════════════════════════════════════ */
 
 .app-shell {
-  width: min(100%, var(--content-max));
-  min-height: 100dvh;
-  margin: 0 auto;
-  padding-bottom: calc(var(--tab-h) + max(16px, env(safe-area-inset-bottom)));
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: rgba(255,255,255,0.45);
   backdrop-filter: blur(30px);
   -webkit-backdrop-filter: blur(30px);
@@ -193,8 +195,10 @@ img {
 }
 
 main {
-  display: grid;
-  gap: 0;
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: none;
 }
 
 /* ════════════════════════════════════════════════════════
@@ -202,9 +206,7 @@ main {
    ════════════════════════════════════════════════════════ */
 
 .topbar {
-  position: sticky;
-  top: 0;
-  z-index: 50;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -313,17 +315,13 @@ main {
    ════════════════════════════════════════════════════════ */
 
 .module-tabs {
-  position: fixed;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(100%, var(--content-max));
-  z-index: 100;
+  position: relative;
+  flex-shrink: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: 0;
-  padding: 8px 0 12px;
-  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  padding: 8px 0;
+  padding-bottom: env(safe-area-inset-bottom, 16px);
   background: rgba(255,255,255,0.3);
   border-top: 1px solid rgba(255,255,255,0.5);
   backdrop-filter: blur(20px);

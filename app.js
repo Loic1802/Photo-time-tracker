@@ -102,6 +102,7 @@ let _timerInterval   = null;
 let _timerStart      = null;
 let _timerCat        = 'shooting';
 let _timerSeconds    = 0;
+let _tickBarCounter  = 0;        // met à jour les quota bars toutes les 5s
 let _editingProjetId = null; // null = création, string = édition du projet correspondant
 
 // ════════════════════════════════════════════════════════
@@ -816,6 +817,12 @@ function _subviewTemps(projet) {
         ${_renderCatChips(_timerCat)}
       </div>
 
+      <!-- Barres de progression quotas -->
+      <div class="quota-bars" id="quotaBars">
+        <p class="quota-bars-title">Quotas</p>
+        ${_renderQuotaBars(projet)}
+      </div>
+
       <!-- Boutons -->
       <div class="chrono-actions">
         <button class="btn-action" id="btnToggleChrono" type="button">
@@ -972,6 +979,13 @@ function _tickTimer() {
   const s = _timerSeconds % 60;
   const el = $('chronoDisplay');
   if (el) el.textContent = [h, m, s].map(n => String(n).padStart(2, '0')).join(':');
+
+  // Mise à jour des barres quota toutes les 5 secondes
+  _tickBarCounter++;
+  if (_tickBarCounter % 5 === 0) {
+    const p = _activeProjet();
+    if (p) _updateQuotaBars(p);
+  }
 }
 
 function _updateChronoStatus() {
@@ -999,6 +1013,7 @@ function _refreshTempsDisplay(projet) {
     tauxEl.textContent = _statTauxReel(projet);
     tauxEl.className   = `stat-mini-val ${_tauxReelClass(projet)}`;
   }
+  _updateQuotaBars(projet);
   // Bouton "Tout effacer" — apparaît/disparaît selon présence de sessions
   const head = document.querySelector('.sessions-head');
   if (head) {
@@ -1096,6 +1111,55 @@ function _fmtDuree(min) {
   const h = Math.floor(min / 60);
   const m = min % 60;
   return m > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
+}
+
+// ─── Barres de progression quotas ─────────────────────
+
+function _renderQuotaBars(projet) {
+  const catOrder = ['admin', 'prepa', 'shooting', 'trajet', 'edition', 'revisions'];
+
+  // Effectif par catégorie (en minutes)
+  const effMin = {};
+  (projet.sessions ?? []).forEach(s => {
+    effMin[s.categorie] = (effMin[s.categorie] ?? 0) + (Number(s.duree) || 0);
+  });
+
+  // Ne garder que les catégories avec quota > 0
+  const rows = catOrder
+    .filter(cat => (Number(projet.quotas?.[cat]) || 0) > 0)
+    .map(cat => {
+      const c        = CATEGORIES[cat];
+      const quotaH   = Number(projet.quotas[cat]) || 0;
+      const quotaMin = Math.round(quotaH * 60);
+      const eff      = effMin[cat] ?? 0;
+      const pct      = quotaMin > 0 ? Math.min(100, Math.round((eff / quotaMin) * 100)) : 0;
+      const isOver   = eff > quotaMin;
+      return `
+        <div class="quota-row">
+          <div class="quota-row-head">
+            <div class="quota-dot" style="background:${c.color}"></div>
+            <span class="quota-cat-label">${c.label}</span>
+            <span class="quota-time${isOver ? ' is-over' : ''}">
+              ${_fmtDuree(eff)} / ${_fmtDuree(quotaMin)}
+            </span>
+          </div>
+          <div class="quota-track">
+            <div class="quota-fill${isOver ? ' is-over' : ''}"
+              style="width:${pct}%;${!isOver ? `background:${c.color};` : ''}"></div>
+          </div>
+        </div>`;
+    });
+
+  if (rows.length === 0) {
+    return `<p class="quota-bars-empty">Définis tes quotas dans l'onglet Offre.</p>`;
+  }
+  return rows.join('');
+}
+
+function _updateQuotaBars(projet) {
+  const el = $('quotaBars');
+  if (!el) return;
+  el.innerHTML = `<p class="quota-bars-title">Quotas</p>${_renderQuotaBars(projet)}`;
 }
 
 // ─── Bottom sheet — ajout manuel ─────────────────────
