@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════════════════
    FRAMES — Mini ERP pour photographe freelance
-   app.js · Phase 2 — Onboarding + Shell
+   app.js · Phase 2 — Shell + Navigation
    ══════════════════════════════════════════════════════ */
 
 'use strict';
@@ -31,9 +31,6 @@ const Storage = {
   },
 };
 
-// Flag onboarding stocké en string brute (fr_onboarding_done = 'true')
-const ONBOARDING_KEY = 'fr_onboarding_done';
-
 // ════════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════════
@@ -51,117 +48,17 @@ const save = {
   projets:  () => Storage.set('projets',  state.projets),
 };
 
+// Comparaisons de taux (vert/orange/rouge) actives
+// uniquement si fr_user.tauxCible est défini et > 0
+function hasTaux() {
+  return !!(state.user?.tauxCible > 0);
+}
+
 // ════════════════════════════════════════════════════════
 // DOM HELPER
 // ════════════════════════════════════════════════════════
 
 const $ = id => document.getElementById(id);
-
-// ════════════════════════════════════════════════════════
-// ONBOARDING — Module 0
-// ════════════════════════════════════════════════════════
-
-let _ob = {}; // données temporaires collectées sur les 3 écrans
-
-function showOnboarding() {
-  $('onboarding').hidden = false;
-  $('appShell').hidden   = true;
-  _showObScreen(1);
-}
-
-function _showObScreen(n) {
-  [1, 2, 3].forEach(i => {
-    const el = $(`ob-screen-${i}`);
-    if (i === n) {
-      el.hidden = false;
-      el.style.opacity    = '0';
-      el.style.transition = '';
-      requestAnimationFrame(() => {
-        el.style.transition = 'opacity 0.25s ease';
-        el.style.opacity    = '1';
-      });
-    } else {
-      el.style.opacity    = '';
-      el.style.transition = '';
-      el.hidden = true;
-    }
-  });
-}
-
-function initOnboarding() {
-  // ── Écran 1 → 2
-  $('ob-btn-1').addEventListener('click', () => {
-    const prenom = $('ob-prenom').value.trim();
-    if (!prenom) { $('ob-prenom').focus(); return; }
-    _ob.prenom     = prenom;
-    _ob.specialite = $('ob-specialite').value;
-    _showObScreen(2);
-  });
-
-  // ── Écran 2 : calcul temps réel
-  ['ob-revenu', 'ob-jours', 'ob-charges'].forEach(id =>
-    $(id).addEventListener('input', _updateTauxPreview)
-  );
-  _updateTauxPreview();
-
-  // ── Écran 2 → 3
-  $('ob-btn-2').addEventListener('click', () => {
-    const revenu  = parseFloat($('ob-revenu').value)  || 0;
-    const jours   = parseFloat($('ob-jours').value)   || 15;
-    const charges = parseFloat($('ob-charges').value) || 0;
-    if (!revenu) { $('ob-revenu').focus(); return; }
-    _ob.revenuCible  = revenu;
-    _ob.joursFact    = jours;
-    _ob.charges      = charges;
-    _ob.tauxPlancher = Math.round((revenu + charges) / (jours * 8));
-    _ob.tauxCible    = Math.round(_ob.tauxPlancher * 1.3);
-    _showObScreen(3);
-  });
-
-  // ── Écran 3 — Créer un projet
-  $('ob-btn-3').addEventListener('click', () => {
-    _finishOnboarding();
-    showShell('studio');
-    // TODO Phase 3 : ouvrir bottom sheet nouveau projet
-  });
-
-  // ── Écran 3 — Pas maintenant
-  $('ob-skip').addEventListener('click', () => {
-    _finishOnboarding();
-    showShell('studio');
-  });
-}
-
-function _updateTauxPreview() {
-  const revenu  = parseFloat($('ob-revenu').value)  || 0;
-  const jours   = parseFloat($('ob-jours').value)   || 15;
-  const charges = parseFloat($('ob-charges').value) || 0;
-
-  if (!revenu) {
-    $('ob-taux-plancher').textContent = '—';
-    $('ob-taux-cible').textContent    = '—';
-    return;
-  }
-  const plancher = Math.round((revenu + charges) / (jours * 8));
-  const cible    = Math.round(plancher * 1.3);
-  $('ob-taux-plancher').textContent = `CHF ${plancher}/h`;
-  $('ob-taux-cible').textContent    = `CHF ${cible}/h`;
-}
-
-function _finishOnboarding() {
-  state.user = {
-    prenom:       _ob.prenom       || '',
-    specialite:   _ob.specialite   || '',
-    revenuCible:  _ob.revenuCible  || 0,
-    joursFact:    _ob.joursFact    || 15,
-    charges:      _ob.charges      || 0,
-    tauxPlancher: _ob.tauxPlancher || 0,
-    tauxCible:    _ob.tauxCible    || 0,
-  };
-  save.user();
-  localStorage.setItem(ONBOARDING_KEY, 'true');
-  $('onboarding').hidden = true;
-}
 
 // ════════════════════════════════════════════════════════
 // SHELL — navigation + topbar
@@ -175,11 +72,8 @@ const TABS = [
   { id: 'profil',      label: 'Profil',    icon: _ico_user()    },
 ];
 
-let _tabBarReady = false;
-
 function showShell(view = 'studio') {
-  $('appShell').hidden = false;
-  if (!_tabBarReady) { _renderTabBar(); }
+  _renderTabBar();
   navigateTo(view);
 }
 
@@ -195,21 +89,17 @@ function _renderTabBar() {
     const btn = e.target.closest('[data-tab]');
     if (btn) navigateTo(btn.dataset.tab);
   });
-  _tabBarReady = true;
 }
 
 function navigateTo(view) {
   state.currentView = view;
 
-  // Actif dans le tab bar
   document.querySelectorAll('[data-tab]').forEach(btn =>
     btn.classList.toggle('is-active', btn.dataset.tab === view)
   );
 
-  // Topbar
   _renderTopbar(view);
 
-  // Vue avec fade
   const el = $('viewContainer');
   el.style.opacity    = '0';
   el.style.transition = '';
@@ -228,8 +118,6 @@ function _renderTopbar(view) {
   const an   = now.getFullYear();
   $('topbarEyebrow').textContent = `Frames · ${mois} ${an}`;
   $('topbarTitle').textContent   = TABS.find(t => t.id === view)?.label ?? 'Frames';
-
-  // "+" visible sur Studio et Prospection seulement
   $('topbarAction').hidden = !['studio', 'prospection'].includes(view);
 }
 
@@ -249,17 +137,11 @@ function _renderView(view, el) {
 }
 
 function _viewStudio() {
-  const prenom = state.user?.prenom ? ` ${state.user.prenom}` : '';
   return `
     <div class="empty-state" style="margin:32px 16px;min-height:200px;">
-      <div>
-        <p style="font-size:.95rem;font-weight:500;color:rgba(30,50,70,.55);">
-          Bonjour${prenom} 👋
-        </p>
-        <p style="font-size:.8rem;margin-top:6px;color:rgba(30,50,70,.3);">
-          Module Studio — Phase 3
-        </p>
-      </div>
+      <p style="font-size:.8rem;color:rgba(30,50,70,.3);">
+        Module Studio — Phase 3
+      </p>
     </div>`;
 }
 
@@ -286,17 +168,34 @@ function _viewInsights() {
 
 function _viewProfil() {
   const u = state.user;
-  if (!u) return _viewStudio();
+  if (!u || !u.prenom) {
+    return `
+      <div class="empty-state" style="margin:32px 16px;min-height:200px;">
+        <div>
+          <p style="font-size:.85rem;font-weight:500;color:rgba(30,50,70,.5);">
+            Profil non configuré
+          </p>
+          <p style="font-size:.78rem;margin-top:6px;color:rgba(30,50,70,.3);">
+            Les comparaisons de taux s'activeront une fois ton taux cible défini.
+          </p>
+          <p style="font-size:.75rem;margin-top:10px;color:rgba(30,50,70,.25);">
+            Module Profil — Phase 9
+          </p>
+        </div>
+      </div>`;
+  }
   return `
     <div class="empty-state" style="margin:32px 16px;min-height:200px;">
       <div>
         <p style="font-size:.9rem;font-weight:500;color:rgba(30,50,70,.6);">
-          ${u.prenom} · ${u.specialite}
+          ${u.prenom} · ${u.specialite ?? '—'}
         </p>
         <p style="font-size:.8rem;margin-top:4px;color:rgba(30,50,70,.4);">
-          Plancher CHF ${u.tauxPlancher}/h · cible CHF ${u.tauxCible}/h
+          ${hasTaux()
+            ? `Plancher CHF ${u.tauxPlancher}/h · cible CHF ${u.tauxCible}/h`
+            : 'Taux cible non défini'}
         </p>
-        <p style="font-size:.75rem;margin-top:8px;color:rgba(30,50,70,.3);">
+        <p style="font-size:.75rem;margin-top:10px;color:rgba(30,50,70,.25);">
           Module Profil — Phase 9
         </p>
       </div>
@@ -354,17 +253,7 @@ function _ico_user() {
 }
 
 // ════════════════════════════════════════════════════════
-// INIT
+// INIT — ouverture directe sur Studio
 // ════════════════════════════════════════════════════════
 
-function init() {
-  const done = localStorage.getItem(ONBOARDING_KEY) === 'true';
-  if (done) {
-    showShell(state.currentView);
-  } else {
-    initOnboarding();
-    showOnboarding();
-  }
-}
-
-init();
+showShell('studio');
