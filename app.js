@@ -45,6 +45,18 @@ const CATEGORIES = {
 };
 
 // ════════════════════════════════════════════════════════
+// STATUTS — source de vérité unique pour labels + couleurs
+// ════════════════════════════════════════════════════════
+
+const STATUTS = {
+  brouillon: { label: 'Brouillon',  color: '#8AAAC8', bg: 'rgba(138,170,200,0.18)' },
+  attente:   { label: 'En attente', color: '#E09050', bg: 'rgba(224,144,80,0.18)'  },
+  encours:   { label: 'En cours',   color: '#5AAE82', bg: 'rgba(90,174,130,0.18)'  },
+  termine:   { label: 'Terminé',    color: '#2E7D52', bg: 'rgba(46,125,82,0.18)'   },
+  sanssuite: { label: 'Sans suite', color: '#C03030', bg: 'rgba(192,48,48,0.12)'   },
+};
+
+// ════════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════════
 
@@ -103,16 +115,17 @@ let _timerStart      = null;
 let _timerCat        = 'shooting';
 let _timerSeconds    = 0;
 let _tickBarCounter  = 0;        // met à jour les quota bars toutes les 5s
-let _editingProjetId = null; // null = création, string = édition du projet correspondant
+let _editingProjetId = null;     // null = création, string = édition du projet correspondant
+let _profilMode      = 'simple'; // 'simple' | 'avance' — mode objectifs financiers
 
 // ════════════════════════════════════════════════════════
 // SHELL — navigation + topbar
 // ════════════════════════════════════════════════════════
 
 const TABS = [
-  { id: 'studio',      label: 'Studio',    icon: _ico_camera()  },
+  { id: 'studio',      label: 'Studio',    icon: _ico_folder()  },
   { id: 'prospection', label: 'Prospect.', icon: _ico_users()   },
-  { id: 'projet',      label: 'Projet',    icon: _ico_folder()  },
+  { id: 'projet',      label: 'Projet',    icon: _ico_camera()  },
   { id: 'insights',    label: 'Insights',  icon: _ico_chart()   },
   { id: 'profil',      label: 'Profil',    icon: _ico_user()    },
 ];
@@ -261,12 +274,89 @@ function _viewStudio() {
 function _wireStudio() {
   $('btnCreateFirst')?.addEventListener('click', _openNewProjectSheet);
 
+  // Cartes projet — clic sur la carte → ouvrir dans Projet
   $('viewContainer').querySelectorAll('[data-projet-id]').forEach(card => {
-    card.addEventListener('click', () => {
-      // Phase 5 : ouvrir le détail projet — pour l'instant stub
+    card.addEventListener('click', e => {
+      if (e.target.closest('.projet-menu-btn')) return; // géré séparément
+      const id  = card.dataset.projetId;
+      const p   = state.projets.find(x => x.id === id);
+      if (!p) return;
+      state.activeProjetId = id;
+      // Sous-onglet intelligent : encours → Temps, sinon → Offre
+      state.projetSubView = (p.statut === 'encours') ? 'temps' : 'offre';
       navigateTo('projet');
     });
+    card.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.click(); }
+    });
   });
+
+  // Boutons menu "···"
+  $('viewContainer').querySelectorAll('.projet-menu-btn').forEach(btn =>
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      _openProjetMenu(btn.dataset.menuProjetId, btn);
+    })
+  );
+}
+
+function _openProjetMenu(projetId, triggerEl) {
+  // Fermer un menu déjà ouvert
+  document.querySelector('.projet-context-menu')?.remove();
+
+  const projet = state.projets.find(p => p.id === projetId);
+  if (!projet) return;
+
+  const menu = document.createElement('div');
+  menu.className = 'projet-context-menu';
+  menu.innerHTML = `
+    <button class="ctx-item" data-action="modifier" type="button">Modifier</button>
+    <button class="ctx-item ctx-item--warn" data-action="sanssuite" type="button">Marquer sans suite</button>
+    <button class="ctx-item ctx-item--danger" data-action="supprimer" type="button">Supprimer</button>
+  `;
+
+  // Positionnement sous le bouton déclencheur
+  const rect = triggerEl.getBoundingClientRect();
+  Object.assign(menu.style, {
+    position: 'fixed',
+    top:      (rect.bottom + 6) + 'px',
+    right:    (window.innerWidth - rect.right) + 'px',
+    zIndex:   '300',
+  });
+
+  document.body.appendChild(menu);
+
+  // Fermer sur clic extérieur
+  const closeMenu = (ev) => {
+    if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('click', closeMenu, true); }
+  };
+  setTimeout(() => document.addEventListener('click', closeMenu, true), 10);
+
+  menu.querySelectorAll('.ctx-item').forEach(btn =>
+    btn.addEventListener('click', e => {
+      const action = e.currentTarget.dataset.action;
+      menu.remove();
+      document.removeEventListener('click', closeMenu, true);
+
+      if (action === 'modifier') {
+        _editingProjetId = projetId;
+        _openNewProjectSheet(projet);
+
+      } else if (action === 'sanssuite') {
+        if (!confirm(`Marquer "${projet.nom}" sans suite ?`)) return;
+        const idx = state.projets.findIndex(p => p.id === projetId);
+        if (idx !== -1) { state.projets[idx].statut = 'sanssuite'; save.projets(); }
+        navigateTo('studio');
+
+      } else if (action === 'supprimer') {
+        if (!confirm(`Supprimer "${projet.nom}" définitivement ?`)) return;
+        state.projets = state.projets.filter(p => p.id !== projetId);
+        if (state.activeProjetId === projetId) state.activeProjetId = null;
+        save.projets();
+        navigateTo('studio');
+      }
+    })
+  );
 }
 
 // ─── Stats ───────────────────────────────────────────────
@@ -306,7 +396,7 @@ function _groupByClient(projets) {
 // ─── Carte projet ─────────────────────────────────────────
 
 function _renderProjetCard(p) {
-  const pill = _statutPill(p);
+  const s    = STATUTS[p.statut] ?? STATUTS.brouillon;
   const date = p.datePrevue
     ? new Date(p.datePrevue).toLocaleDateString('fr-CH', { day: 'numeric', month: 'short' })
     : '';
@@ -314,25 +404,41 @@ function _renderProjetCard(p) {
   const prix = p.prixFacture ? _fmtCHF(p.prixFacture) : '—';
 
   return `
-    <button class="projet-card" data-projet-id="${p.id}" type="button">
+    <div class="projet-card" data-projet-id="${p.id}" role="button" tabindex="0">
       <div class="projet-card-header">
         <span class="projet-name">${_esc(p.nom)}</span>
-        <span class="statut-pill statut-${pill.cls}">${pill.label}</span>
+        <span class="statut-pill"
+          style="color:${s.color};background:${s.bg};">${s.label}</span>
       </div>
       <div class="projet-card-meta">
         <span>${type}</span>
         ${date ? `<span>·</span><span>${date}</span>` : ''}
         <span class="projet-prix">${prix}</span>
       </div>
-    </button>`;
+      <button class="projet-menu-btn" data-menu-projet-id="${p.id}"
+        type="button" aria-label="Options" tabindex="-1">···</button>
+    </div>`;
 }
 
 function _statutPill(p) {
-  switch (p.statut) {
-    case 'en_cours': return { label: 'En cours',  cls: 'encours'   };
-    case 'livre':    return { label: 'Livré',      cls: 'livre'     };
-    case 'archive':  return { label: 'Archivé',   cls: 'archive'   };
-    default:         return { label: 'Brouillon', cls: 'brouillon' };
+  // Conservé pour rétro-compatibilité interne si besoin
+  return STATUTS[p.statut] ?? STATUTS.brouillon;
+}
+
+/**
+ * Auto-calcule le statut d'un projet à partir de ses données.
+ * Ne jamais écraser 'termine' ou 'sanssuite' (statuts finaux manuels).
+ */
+function _autoStatut(idx) {
+  const p = state.projets[idx];
+  if (!p) return;
+  if (p.statut === 'termine' || p.statut === 'sanssuite') return;
+  const hasSessions = (p.sessions ?? []).length > 0;
+  const hasData     = _totalQuotaH(p) > 0 || p.prixFacture;
+  const newStatut   = hasSessions ? 'encours' : hasData ? 'attente' : 'brouillon';
+  if (state.projets[idx].statut !== newStatut) {
+    state.projets[idx].statut = newStatut;
+    save.projets();
   }
 }
 
@@ -498,11 +604,12 @@ function _submitNewProject(e) {
     datePrevue:    form.datePrevue.value || null,
     prixFacture:   Number(form.prixFacture.value) || null,
     statut:        'brouillon',
-    quotas:        { admin: 0, prepa: 0, shooting: 0, trajet: 0, edition: 0 },
-    checklist:     [],
-    sessions:      [],
-    frais:         [],
-    photosLivrees: null,
+    quotas:           { admin: 0, prepa: 0, shooting: 0, trajet: 0, edition: 0 },
+    checklist:        [],
+    sessions:         [],
+    frais:            [],
+    photosCommandees: null,
+    photosLivrees:    null,
     evalClient:    null,
     revisions:     0,
     scores:        {},
@@ -658,6 +765,16 @@ function _wireProjetSubView(sv, projet) {
 }
 
 function _wireBilan(projet) {
+  // Photos livrées — auto-save + refresh badge
+  $('photosLivreesInput')?.addEventListener('input', e => {
+    const val = Number(e.target.value) || null;
+    const idx = state.projets.findIndex(p => p.id === projet.id);
+    if (idx !== -1) {
+      state.projets[idx].photosLivrees = val;
+      save.projets();
+    }
+  });
+
   $('btnCloturerProjet')?.addEventListener('click', () => {
     if (!confirm('Marquer ce projet comme terminé ?')) return;
 
@@ -731,6 +848,15 @@ function _subviewOffre(projet) {
               projet.prixFacture ? _fmtCHF(projet.prixFacture) : '',
             ].filter(Boolean).join(' · ')}</p>
             <button class="btn-link-edit" id="btnEditProjet" type="button">Modifier</button>
+          <div class="photos-cmd-row">
+            <label class="photos-cmd-label" for="photosCommandeesInput">
+              Photos commandées
+            </label>
+            <input id="photosCommandeesInput" class="photos-cmd-input"
+              type="number" min="0" step="1" inputmode="numeric"
+              placeholder="—"
+              value="${projet.photosCommandees ?? ''}" />
+          </div>
           </div>
           <div class="taux-impl ${tauxCls}" id="tauxImplCard">
             <p class="taux-impl-val" id="tauxImplVal">${tauxVal}</p>
@@ -793,6 +919,13 @@ function _wireOffre(projet) {
     _openNewProjectSheet(projet);
   });
 
+  // Photos commandées — auto-save
+  $('photosCommandeesInput')?.addEventListener('input', e => {
+    const val = Number(e.target.value) || null;
+    const idx = state.projets.findIndex(p => p.id === projet.id);
+    if (idx !== -1) { state.projets[idx].photosCommandees = val; save.projets(); }
+  });
+
   // Démarrer le chrono → sous-onglet Temps
   $('btnStartChrono')?.addEventListener('click', () => {
     state.projetSubView = 'temps';
@@ -839,11 +972,12 @@ function _onQuotaChange(projet) {
   if (lblEl)  lblEl.textContent  = tvLabel;
   if (cardEl) cardEl.className   = `taux-impl ${tvCls}`;
 
-  // Auto-save
+  // Auto-save + statut auto
   const idx = state.projets.findIndex(p => p.id === projet.id);
   if (idx !== -1) {
     state.projets[idx].quotas = quotas;
     save.projets();
+    _autoStatut(idx);
   }
 }
 
@@ -1002,6 +1136,7 @@ function _stopChrono(projet) {
   if (idx !== -1) {
     state.projets[idx].sessions.push(session);
     save.projets();
+    _autoStatut(idx); // passer en 'encours' dès la première session
   }
 
   _timerSeconds = 0;
@@ -1567,6 +1702,40 @@ function _subviewBilan(projet) {
         </div>
       </div>
 
+      <!-- ── Photos ── -->
+      ${(() => {
+        const cmd = Number(projet.photosCommandees) || 0;
+        const liv = Number(projet.photosLivrees)    || 0;
+        const prixParPhoto = cmd > 0 && prixFacture > 0
+          ? Math.round(prixFacture / cmd) : null;
+        const delta = cmd > 0 ? liv - cmd : null;
+        const deltaSign = delta === null ? '' : delta > 0 ? `+${delta}` : `${delta}`;
+        const deltaCls  = delta === null ? '' : delta > 0 ? 'is-warn' : delta < 0 ? 'is-neutral' : '';
+        return `
+      <div class="glass-card bilan-section">
+        <p class="bilan-section-title">Photos</p>
+        <div class="bilan-row">
+          <span class="bilan-row-label">Commandées</span>
+          <span class="bilan-row-value">${cmd > 0 ? cmd : '—'}</span>
+        </div>
+        <div class="bilan-row">
+          <span class="bilan-row-label">Livrées</span>
+          <div class="bilan-photos-edit">
+            <input id="photosLivreesInput" class="bilan-photos-input"
+              type="number" min="0" step="1" inputmode="numeric"
+              placeholder="—"
+              value="${projet.photosLivrees ?? ''}" />
+            ${delta !== null ? `<span class="bilan-photos-badge ${deltaCls}">${deltaSign}</span>` : ''}
+          </div>
+        </div>
+        ${prixParPhoto !== null ? `
+        <div class="bilan-row">
+          <span class="bilan-row-label">CHF / photo</span>
+          <span class="bilan-row-value">${prixParPhoto} CHF</span>
+        </div>` : ''}
+      </div>`;
+      })()}
+
       <!-- ── Taux horaire ── -->
       <div class="glass-card bilan-section">
         <p class="bilan-section-title">Taux horaire</p>
@@ -1608,8 +1777,7 @@ function _subviewBilan(projet) {
       <!-- ── Clôture ── -->
       ${projet.statut === 'termine'
         ? `<div class="bilan-termine-badge">Projet terminé ✓</div>`
-        : `<button class="btn-action" id="btnCloturerProjet" type="button"
-            style="margin:0 16px;">
+        : `<button class="btn-action" id="btnCloturerProjet" type="button">
             Clôturer le projet ✓
           </button>`}
 
@@ -1839,31 +2007,62 @@ function _viewProfil() {
       </div>
 
       <!-- ── Objectifs financiers ── -->
+      ${(() => {
+        const mode = u.profilMode ?? 'simple';
+        return `
       <div class="profil-section glass-card">
         <p class="profil-section-title">Objectifs financiers</p>
-        <label for="pfRevenu">
-          Revenu mensuel net visé (CHF)
-          <input id="pfRevenu" type="number"
-            placeholder="0" min="0" step="100"
-            inputmode="numeric"
-            value="${u.revenuCible ?? ''}" />
-        </label>
-        <div class="form-row">
-          <label for="pfJours">
-            Jours fact. / mois
-            <input id="pfJours" type="number"
-              placeholder="15" min="1" max="23" step="1"
-              inputmode="numeric"
-              value="${u.joursFact ?? 15}" />
-          </label>
-          <label for="pfCharges">
-            Charges / mois (CHF)
-            <input id="pfCharges" type="number"
-              placeholder="0" min="0" step="50"
-              inputmode="numeric"
-              value="${u.charges ?? ''}" />
-          </label>
+
+        <!-- Toggle simple / avancé -->
+        <div class="profil-mode-toggle" id="profilModeToggle">
+          <button class="profil-mode-btn${mode === 'simple' ? ' is-active' : ''}"
+            data-mode="simple" type="button">Simple</button>
+          <button class="profil-mode-btn${mode === 'avance' ? ' is-active' : ''}"
+            data-mode="avance" type="button">Avancé</button>
         </div>
+
+        <!-- Mode simple : saisie directe du taux cible -->
+        <div id="pfModeSimple"${mode !== 'simple' ? ' class="is-hidden"' : ''}>
+          <label for="pfTauxCible">
+            Taux horaire cible (CHF/h)
+            <input id="pfTauxCible" type="number"
+              placeholder="120" min="0" step="5"
+              inputmode="numeric"
+              value="${u.tauxCible ?? ''}" />
+          </label>
+          <p class="profil-section-hint" style="margin:4px 0 0;">
+            Le plancher sera calculé à 75 % de cette valeur.
+          </p>
+        </div>
+
+        <!-- Mode avancé : calcul depuis revenus/jours/charges -->
+        <div id="pfModeAvance"${mode !== 'avance' ? ' class="is-hidden"' : ''}>
+          <label for="pfRevenu">
+            Revenu mensuel net visé (CHF)
+            <input id="pfRevenu" type="number"
+              placeholder="0" min="0" step="100"
+              inputmode="numeric"
+              value="${u.revenuCible ?? ''}" />
+          </label>
+          <div class="form-row">
+            <label for="pfJours">
+              Jours fact. / mois
+              <input id="pfJours" type="number"
+                placeholder="15" min="1" max="23" step="1"
+                inputmode="numeric"
+                value="${u.joursFact ?? 15}" />
+            </label>
+            <label for="pfCharges">
+              Charges / mois (CHF)
+              <input id="pfCharges" type="number"
+                placeholder="0" min="0" step="50"
+                inputmode="numeric"
+                value="${u.charges ?? ''}" />
+            </label>
+          </div>
+        </div>
+
+        <!-- Preview taux (commun aux deux modes) -->
         <div class="taux-preview" id="tauxPreview">
           <div class="taux-preview-item">
             <p class="taux-preview-label">Plancher</p>
@@ -1875,7 +2074,8 @@ function _viewProfil() {
             <p class="taux-preview-value is-cible" id="pfCibleVal">—</p>
           </div>
         </div>
-      </div>
+      </div>`;
+      })()}
 
       <!-- ── Enregistrer ── -->
       <button class="btn-action" id="btnSaveProfil" type="button">
@@ -1967,7 +2167,24 @@ function _wireMaterielDeletes() {
 // ─── Profil : wiring ──────────────────────────────────
 
 function _wireProfilView() {
-  ['pfRevenu', 'pfJours', 'pfCharges'].forEach(id =>
+  // Initialiser le mode depuis les données sauvegardées
+  _profilMode = state.user?.profilMode ?? 'simple';
+
+  // Toggle simple / avancé
+  document.querySelectorAll('.profil-mode-btn').forEach(btn =>
+    btn.addEventListener('click', e => {
+      _profilMode = e.currentTarget.dataset.mode;
+      document.querySelectorAll('.profil-mode-btn').forEach(b =>
+        b.classList.toggle('is-active', b.dataset.mode === _profilMode)
+      );
+      $('pfModeSimple')?.classList.toggle('is-hidden', _profilMode !== 'simple');
+      $('pfModeAvance')?.classList.toggle('is-hidden', _profilMode !== 'avance');
+      _updateTauxPreview();
+    })
+  );
+
+  // Inputs live-preview
+  ['pfTauxCible', 'pfRevenu', 'pfJours', 'pfCharges'].forEach(id =>
     $(id)?.addEventListener('input', _updateTauxPreview)
   );
   _updateTauxPreview();
@@ -2001,10 +2218,16 @@ function _calcTaux(revenu, jours, charges) {
 }
 
 function _updateTauxPreview() {
-  const revenu  = Number($('pfRevenu')?.value)  || 0;
-  const jours   = Number($('pfJours')?.value)   || 15;
-  const charges = Number($('pfCharges')?.value) || 0;
-  const { plancher, cible } = _calcTaux(revenu, jours, charges);
+  let plancher, cible;
+  if (_profilMode === 'simple') {
+    cible    = Number($('pfTauxCible')?.value) || 0;
+    plancher = Math.round(cible * 0.75);
+  } else {
+    const revenu  = Number($('pfRevenu')?.value)  || 0;
+    const jours   = Number($('pfJours')?.value)   || 15;
+    const charges = Number($('pfCharges')?.value) || 0;
+    ({ plancher, cible } = _calcTaux(revenu, jours, charges));
+  }
   const pEl = $('pfPlancherVal');
   const cEl = $('pfCibleVal');
   if (pEl) pEl.textContent = plancher > 0 ? `CHF ${plancher}/h` : '—';
@@ -2012,18 +2235,31 @@ function _updateTauxPreview() {
 }
 
 function _saveProfil() {
-  const prenom      = $('pfPrenom')?.value.trim()   ?? '';
-  const specialite  = $('pfSpecialite')?.value       ?? '';
-  const revenuCible = Number($('pfRevenu')?.value)  || 0;
-  const joursFact   = Number($('pfJours')?.value)   || 15;
-  const charges     = Number($('pfCharges')?.value) || 0;
-  const { plancher, cible } = _calcTaux(revenuCible, joursFact, charges);
+  const prenom     = $('pfPrenom')?.value.trim()    ?? '';
+  const specialite = $('pfSpecialite')?.value        ?? '';
+  let tauxPlancher, tauxCible, revenuCible, joursFact, charges;
+
+  if (_profilMode === 'simple') {
+    tauxCible    = Number($('pfTauxCible')?.value) || 0;
+    tauxPlancher = Math.round(tauxCible * 0.75);
+    // Conserver les données avancées précédentes si elles existent
+    revenuCible  = state.user?.revenuCible ?? 0;
+    joursFact    = state.user?.joursFact   ?? 15;
+    charges      = state.user?.charges     ?? 0;
+  } else {
+    revenuCible  = Number($('pfRevenu')?.value)  || 0;
+    joursFact    = Number($('pfJours')?.value)   || 15;
+    charges      = Number($('pfCharges')?.value) || 0;
+    const calc   = _calcTaux(revenuCible, joursFact, charges);
+    tauxPlancher = calc.plancher;
+    tauxCible    = calc.cible;
+  }
 
   state.user = {
     prenom, specialite, revenuCible, joursFact, charges,
-    tauxPlancher: plancher,
-    tauxCible:    cible,
-    materiel:     state.user?.materiel ?? [], // préservé — géré indépendamment
+    tauxPlancher, tauxCible,
+    materiel:   state.user?.materiel   ?? [], // préservé — géré indépendamment
+    profilMode: _profilMode,
   };
   save.user();
 
