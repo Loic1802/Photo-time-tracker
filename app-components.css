@@ -74,9 +74,10 @@
 }
 
 .projet-card {
+  position: relative;
   width: 100%;
   text-align: left;
-  padding: 14px 16px;
+  padding: 14px 16px 36px; /* padding-bottom laisse place au bouton menu */
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -129,6 +130,8 @@
 /* ─── Statut pills ───────────────────────────────────── */
 
 .statut-pill {
+  display: inline-flex;
+  align-items: center;
   font-size: .65rem;
   font-weight: 700;
   padding: 3px 8px;
@@ -875,9 +878,11 @@
   background: rgba(30,50,70,0.08);
   border-radius: 99px;
   overflow: hidden;
+  margin-top: 4px;
 }
 
 .quota-fill {
+  display: block;
   height: 100%;
   border-radius: 99px;
   transition: width 0.5s ease;
@@ -1368,12 +1373,20 @@
 
 /* Card verdict */
 .bilan-verdict {
-  padding: 22px 18px;
+  padding: 24px 20px 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  gap: 8px;
   text-align: center;
+}
+
+/* Bouton Clôturer */
+#btnCloturerProjet {
+  display: block;
+  margin: 0 16px 16px;
+  width: calc(100% - 32px);
 }
 
 .bilan-verdict-label {
@@ -1429,4 +1442,158 @@
   font-weight: 600;
   letter-spacing: .01em;
   margin: 0 16px;
+}
+
+/* ════════════════════════════════════════════════════════
+   UTILITAIRES
+   ════════════════════════════════════════════════════════ */
+
+.is-hidden { display: none !important; }
+
+/* ════════════════════════════════════════════════════════
+   STUDIO — carte projet (div cliquable + bouton menu)
+   ════════════════════════════════════════════════════════ */
+
+.projet-card:focus-visible {
+  outline: 2px solid rgba(245,147,50,.7);
+  outline-offset: 2px;
+}
+
+/* Statut pill — couleurs via inline styles depuis STATUTS */
+
+/* Bouton menu "···" sur la carte */
+.projet-menu-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(30,50,70,0.06);
+  border: none;
+  color: rgba(30,50,70,0.45);
+  font-size: .9rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .15s;
+}
+.projet-menu-btn:active { background: rgba(30,50,70,0.12); }
+
+/* Menu contextuel projet */
+.projet-context-menu {
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.8);
+  border-radius: 13px;
+  box-shadow: 0 8px 32px rgba(20,40,60,0.18);
+  overflow: hidden;
+  min-width: 180px;
+}
+.ctx-item {
+  display: block;
+  width: 100%;
+  padding: 13px 16px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(30,50,70,0.06);
+  font-size: .9rem;
+  font-weight: 500;
+  color: rgba(20,40,60,0.85);
+  cursor: pointer;
+  transition: background .12s;
+}
+.ctx-item:last-child { border-bottom: none; }
+.ctx-item:active     { background: rgba(30,50,70,0.06); }
+.ctx-item--warn      { color: #D4800A; }
+.ctx-item--danger    { color: #C03030; }
+
+/* ════════════════════════════════════════════════════════
+   OFFRE — Photos commandées
+   ════════════════════════════════════════════════════════ */
+
+.photos-cmd-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.photos-cmd-label {
+  font-size: .78rem;
+  color: rgba(30,50,70,0.5);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.photos-cmd-input {
+  width: 72px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(30,50,70,0.12);
+  background: rgba(255,255,255,0.5);
+  font-size: .85rem;
+  text-align: center;
+  color: rgba(20,40,60,0.85);
+}
+
+/* ════════════════════════════════════════════════════════
+   BILAN — Photos livrées
+   ════════════════════════════════════════════════════════ */
+
+.bilan-photos-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bilan-photos-input {
+  width: 68px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(30,50,70,0.12);
+  background: rgba(255,255,255,0.5);
+  font-size: .85rem;
+  text-align: center;
+  color: rgba(20,40,60,0.85);
+}
+.bilan-photos-badge {
+  font-size: .72rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 99px;
+}
+.bilan-photos-badge.is-warn    { background: rgba(224,144,80,.14); color: #D4800A; }
+.bilan-photos-badge.is-neutral { background: rgba(30,50,70,.07);   color: rgba(30,50,70,.5); }
+
+/* ════════════════════════════════════════════════════════
+   PROFIL — toggle simple / avancé
+   ════════════════════════════════════════════════════════ */
+
+.profil-mode-toggle {
+  display: flex;
+  background: rgba(30,50,70,0.07);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 3px;
+  margin-bottom: 16px;
+}
+.profil-mode-btn {
+  flex: 1;
+  padding: 7px 0;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  font-size: .82rem;
+  font-weight: 500;
+  color: rgba(30,50,70,0.45);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.profil-mode-btn.is-active {
+  background: rgba(255,255,255,0.85);
+  color: rgba(20,40,60,0.9);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(20,40,60,0.1);
 }
