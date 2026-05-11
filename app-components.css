@@ -139,8 +139,8 @@
 }
 
 .statut-brouillon {
-  background: rgba(30,50,70,.08);
-  color: rgba(30,50,70,.45);
+  background: rgba(213,112,10,0.12);
+  color: #B8600A;
 }
 
 .statut-encours {
@@ -774,6 +774,8 @@
   flex-direction: column;
   gap: 10px;
   padding: 12px 0 120px;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 .chrono-card {
@@ -869,7 +871,7 @@
 }
 
 .quota-track {
-  height: 4px;
+  height: 5px;
   background: rgba(30,50,70,0.08);
   border-radius: 99px;
   overflow: hidden;
@@ -891,10 +893,14 @@
   display: flex;
   gap: 7px;
   overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  width: 100%;
   scrollbar-width: none;
   padding: 4px 16px 8px;
   touch-action: pan-x;
   -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
 }
 
 .cat-chips-scroll::-webkit-scrollbar {
@@ -1407,3 +1413,20 @@
 .bilan-verdict-text.is-warn    { color: #D4800A; }
 .bilan-verdict-text.is-loss    { color: #C03030; }
 .bilan-verdict-text.is-neutral { color: rgba(20,40,60,.5); }
+
+/* Badge projet terminé */
+.bilan-termine-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 15px 20px;
+  background: rgba(46,125,82,.1);
+  border: 1px solid rgba(46,125,82,.22);
+  border-radius: 14px;
+  color: #2E7D52;
+  font-size: .88rem;
+  font-weight: 600;
+  letter-spacing: .01em;
+  margin: 0 16px;
+}

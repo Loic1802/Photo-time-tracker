@@ -654,6 +654,30 @@ function _wireProjetSubView(sv, projet) {
   if (sv === 'offre')  _wireOffre(projet);
   if (sv === 'temps')  _wireTemps(projet);
   if (sv === 'frais')  _wireFrais(projet);
+  if (sv === 'bilan')  _wireBilan(projet);
+}
+
+function _wireBilan(projet) {
+  $('btnCloturerProjet')?.addEventListener('click', () => {
+    if (!confirm('Marquer ce projet comme terminé ?')) return;
+
+    const idx = state.projets.findIndex(p => p.id === projet.id);
+    if (idx !== -1) {
+      state.projets[idx].statut      = 'termine';
+      state.projets[idx].dateCloture = new Date().toISOString();
+      save.projets();
+    }
+
+    const btn = $('btnCloturerProjet');
+    if (btn) {
+      btn.textContent          = 'Projet clôturé ✓';
+      btn.style.background     = 'linear-gradient(135deg,#3A9E68,#2E7D52)';
+      btn.style.boxShadow      = '0 4px 16px rgba(46,125,82,.35)';
+      btn.disabled             = true;
+    }
+
+    setTimeout(() => navigateTo('studio'), 1500);
+  });
 }
 
 // ════════════════════════════════════════════════════════
@@ -662,9 +686,22 @@ function _wireProjetSubView(sv, projet) {
 
 function _subviewOffre(projet) {
 
-  const totalH = _totalQuotaH(projet);
-  const taux   = _calcTauxImplicite(projet, totalH);
-  const tauxCls = taux !== null ? _tauxImplClass(taux) : '';
+  const totalH      = _totalQuotaH(projet);
+  const prixF       = Number(projet.prixFacture) || 0;
+  let tauxVal, tauxLabel, tauxCls;
+
+  if (prixF <= 0) {
+    tauxVal = '—'; tauxLabel = 'taux implicite'; tauxCls = '';
+  } else if (totalH <= 0) {
+    tauxVal  = `CHF ${Math.round(prixF / 8)}/h`;
+    tauxLabel = 'Base 1 j · affine tes quotas';
+    tauxCls  = '';
+  } else {
+    const t  = Math.round(prixF / totalH);
+    tauxVal  = `CHF ${t}/h`;
+    tauxLabel = 'taux implicite';
+    tauxCls  = _tauxImplClass(t);
+  }
 
   const date = projet.datePrevue
     ? new Date(projet.datePrevue).toLocaleDateString('fr-CH',
@@ -696,10 +733,8 @@ function _subviewOffre(projet) {
             <button class="btn-link-edit" id="btnEditProjet" type="button">Modifier</button>
           </div>
           <div class="taux-impl ${tauxCls}" id="tauxImplCard">
-            <p class="taux-impl-val" id="tauxImplVal">
-              ${taux !== null ? `CHF ${taux}/h` : '—'}
-            </p>
-            <p class="taux-impl-label">taux implicite</p>
+            <p class="taux-impl-val" id="tauxImplVal">${tauxVal}</p>
+            <p class="taux-impl-label" id="tauxImplLabel">${tauxLabel}</p>
           </div>
         </div>
       </div>
@@ -777,15 +812,32 @@ function _onQuotaChange(projet) {
     quotas[cat] = _quotaToHours(val, unit);
   });
 
-  const totalH = Object.values(quotas).reduce((s, h) => s + h, 0);
-  const taux   = totalH > 0 ? Math.round((Number(projet.prixFacture) || 0) / totalH) : null;
+  const totalH  = Object.values(quotas).reduce((s, h) => s + h, 0);
+  const prixF   = Number(projet.prixFacture) || 0;
 
-  const totEl  = $('quotaTotalVal');
-  const valEl  = $('tauxImplVal');
-  const cardEl = $('tauxImplCard');
-  if (totEl)  totEl.textContent = _fmtH(totalH);
-  if (valEl)  valEl.textContent = taux !== null ? `CHF ${taux}/h` : '—';
-  if (cardEl) cardEl.className  = `taux-impl ${taux !== null ? _tauxImplClass(taux) : ''}`;
+  // Logique 3-cas : pas de prix · prix sans quotas · prix avec quotas
+  let tvVal, tvLabel, tvCls;
+  if (prixF <= 0) {
+    tvVal = '—'; tvLabel = 'taux implicite'; tvCls = '';
+  } else if (totalH <= 0) {
+    tvVal  = `CHF ${Math.round(prixF / 8)}/h`;
+    tvLabel = 'Base 1 j · affine tes quotas';
+    tvCls  = '';
+  } else {
+    const t = Math.round(prixF / totalH);
+    tvVal  = `CHF ${t}/h`;
+    tvLabel = 'taux implicite';
+    tvCls  = _tauxImplClass(t);
+  }
+
+  const totEl   = $('quotaTotalVal');
+  const valEl   = $('tauxImplVal');
+  const lblEl   = $('tauxImplLabel');
+  const cardEl  = $('tauxImplCard');
+  if (totEl)  totEl.textContent  = _fmtH(totalH);
+  if (valEl)  valEl.textContent  = tvVal;
+  if (lblEl)  lblEl.textContent  = tvLabel;
+  if (cardEl) cardEl.className   = `taux-impl ${tvCls}`;
 
   // Auto-save
   const idx = state.projets.findIndex(p => p.id === projet.id);
@@ -805,25 +857,14 @@ function _subviewTemps(projet) {
   return `
     <div class="temps-view">
 
-      <!-- Chrono -->
+      <!-- 1. Chrono -->
       <div class="glass-card chrono-card">
         <p class="chrono-status" id="chronoStatus">Prêt</p>
         <p class="chrono-display" id="chronoDisplay">00:00:00</p>
         <p class="chrono-sub" id="chronoSub"></p>
       </div>
 
-      <!-- Chips catégories -->
-      <div class="cat-chips-scroll" id="catChips">
-        ${_renderCatChips(_timerCat)}
-      </div>
-
-      <!-- Barres de progression quotas -->
-      <div class="quota-bars" id="quotaBars">
-        <p class="quota-bars-title">Quotas</p>
-        ${_renderQuotaBars(projet)}
-      </div>
-
-      <!-- Boutons -->
+      <!-- 2. Boutons -->
       <div class="chrono-actions">
         <button class="btn-action" id="btnToggleChrono" type="button">
           Démarrer
@@ -834,7 +875,18 @@ function _subviewTemps(projet) {
         </button>
       </div>
 
-      <!-- Stats -->
+      <!-- 3. Chips catégories -->
+      <div class="cat-chips-scroll" id="catChips">
+        ${_renderCatChips(_timerCat)}
+      </div>
+
+      <!-- 4. Barres de progression quotas -->
+      <div class="quota-bars" id="quotaBars">
+        <p class="quota-bars-title">Quotas</p>
+        ${_renderQuotaBars(projet)}
+      </div>
+
+      <!-- 5. Stats + Sessions -->
       <div class="chrono-stats">
         <div class="glass-card stat-mini">
           <p class="stat-mini-label">Effectif</p>
@@ -850,7 +902,6 @@ function _subviewTemps(projet) {
         </div>
       </div>
 
-      <!-- Sessions -->
       <div class="sessions-section">
         <div class="sessions-head">
           <p class="sessions-title">Sessions</p>
@@ -1132,8 +1183,15 @@ function _renderQuotaBars(projet) {
       const quotaH   = Number(projet.quotas[cat]) || 0;
       const quotaMin = Math.round(quotaH * 60);
       const eff      = effMin[cat] ?? 0;
-      const pct      = quotaMin > 0 ? Math.min(100, Math.round((eff / quotaMin) * 100)) : 0;
-      const isOver   = eff > quotaMin;
+      const rawPct   = quotaMin > 0 ? Math.round((eff / quotaMin) * 100) : 0;
+      const visPct   = Math.min(100, rawPct);
+
+      // Couleur fill : < 80 → catégorie · 80-99 → orange · ≥ 100 → rouge
+      const fillColor = rawPct >= 100 ? '#E07878'
+        : rawPct >= 80              ? '#E09050'
+        : c.color;
+      const isOver = rawPct >= 100;
+
       return `
         <div class="quota-row">
           <div class="quota-row-head">
@@ -1144,8 +1202,8 @@ function _renderQuotaBars(projet) {
             </span>
           </div>
           <div class="quota-track">
-            <div class="quota-fill${isOver ? ' is-over' : ''}"
-              style="width:${pct}%;${!isOver ? `background:${c.color};` : ''}"></div>
+            <div class="quota-fill"
+              style="width:${visPct}%;background:${fillColor};"></div>
           </div>
         </div>`;
     });
@@ -1425,7 +1483,26 @@ function _subviewBilan(projet) {
     ? Math.round(prixFacture / totalQuotaH)
     : null;
 
-  // ── Calcul de la classe (profit / warn / loss / neutral) ──
+  // ── Référence taux : réel si sessions existent, offre sinon ──
+  // (suit exactement la logique de la spec : réel > offre > vide)
+  const refTaux = tauxReel !== null ? tauxReel
+    : tauxOffre !== null            ? tauxOffre
+    : null;
+
+  // ── Verdict : basé sur l'existence de refTaux, puis sur taux profil ──
+  let clsBilan, verdictIcon, verdictText;
+  if (refTaux === null) {
+    clsBilan = 'is-neutral'; verdictIcon = '○'; verdictText = 'Données incomplètes';
+  } else if (!hasTaux()) {
+    clsBilan = 'is-neutral'; verdictIcon = '·'; verdictText = 'Configure ton taux dans Profil';
+  } else {
+    const { tauxPlancher, tauxCible } = state.user;
+    if      (refTaux >= tauxCible)    { clsBilan = 'is-profit'; verdictIcon = '✓'; verdictText = 'Projet rentable'; }
+    else if (refTaux >= tauxPlancher) { clsBilan = 'is-warn';   verdictIcon = '≈'; verdictText = 'Marge serrée'; }
+    else                              { clsBilan = 'is-loss';   verdictIcon = '↓'; verdictText = 'Sous le plancher'; }
+  }
+
+  // ── Classe couleur pour les valeurs de taux ──
   function _cls(taux) {
     if (taux === null || !hasTaux()) return 'is-neutral';
     const { tauxPlancher, tauxCible } = state.user;
@@ -1434,26 +1511,14 @@ function _subviewBilan(projet) {
     return 'is-loss';
   }
 
-  // Référence : taux réel s'il existe, sinon taux offre
-  const refTaux  = tauxReel ?? tauxOffre;
-  const clsBilan = _cls(refTaux);
-
-  // Barre de performance (% du taux cible, plafonnée à 100%)
+  // ── Barre de performance (plafonnée visuellement à 100%, mais clsBilan vert si > 100) ──
   let barPct = 0;
   if (refTaux !== null && hasTaux() && state.user.tauxCible > 0) {
-    barPct = Math.min(100, Math.round((refTaux / state.user.tauxCible) * 100));
+    barPct = Math.round((refTaux / state.user.tauxCible) * 100);
   }
+  const barWidth = Math.min(100, barPct);
 
-  // Verdict
-  const verdicts = {
-    'is-profit':  { icon: '✓', text: 'Projet rentable'      },
-    'is-warn':    { icon: '≈', text: 'Marge serrée'          },
-    'is-loss':    { icon: '↓', text: 'Sous le plancher'      },
-    'is-neutral': { icon: '○', text: 'Données incomplètes'   },
-  };
-  const v = verdicts[clsBilan];
-
-  // Classe de la valeur revenu net
+  // Couleur revenu net
   const clsNet = prixFacture <= 0 ? 'is-neutral'
     : revenuNet < 0 ? 'is-loss'
     : 'is-profit';
@@ -1527,18 +1592,26 @@ function _subviewBilan(projet) {
           <span class="bilan-row-label">Cible</span>
           <span class="bilan-row-value is-profit">${state.user.tauxCible} CHF/h</span>
         </div>` : ''}
-        ${barPct > 0 ? `
+        ${barWidth > 0 ? `
         <div class="bilan-bar-wrap">
-          <div class="bilan-bar-fill ${clsBilan}" style="width:${barPct}%"></div>
+          <div class="bilan-bar-fill ${clsBilan}" style="width:${barWidth}%"></div>
         </div>` : ''}
       </div>
 
       <!-- ── Verdict ── -->
       <div class="glass-card bilan-verdict">
         <p class="bilan-verdict-label">Verdict</p>
-        <div class="bilan-verdict-icon ${clsBilan}">${v.icon}</div>
-        <p class="bilan-verdict-text ${clsBilan}">${v.text}</p>
+        <div class="bilan-verdict-icon ${clsBilan}">${verdictIcon}</div>
+        <p class="bilan-verdict-text ${clsBilan}">${verdictText}</p>
       </div>
+
+      <!-- ── Clôture ── -->
+      ${projet.statut === 'termine'
+        ? `<div class="bilan-termine-badge">Projet terminé ✓</div>`
+        : `<button class="btn-action" id="btnCloturerProjet" type="button"
+            style="margin:0 16px;">
+            Clôturer le projet ✓
+          </button>`}
 
     </div>`;
 }
