@@ -12,6 +12,7 @@ const ASSETS = [
   "./assets/picfactory-logo.png",
   "./assets/apple-touch-icon.png",
   "./assets/icon-512.png",
+  "./app-components.css",
   "./assets/studio-pattern.svg",
 ];
 

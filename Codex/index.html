@@ -1,43 +1,65 @@
 <!doctype html>
 <html lang="fr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#B8CADB" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Frames" />
-    <title>Frames</title>
-    <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="./assets/app-apple-touch-icon.png" />
-    <link rel="icon" href="./assets/app-logo.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+    content="width=device-width,
+    initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#C9D6E3" />
+  <meta name="apple-mobile-web-app-capable"
+    content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style"
+    content="default" />
+  <meta name="apple-mobile-web-app-title"
+    content="Frames" />
+  <title>Frames</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon"
+    href="./assets/app-apple-touch-icon.png" />
+  <link rel="icon"
+    href="./assets/app-logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./app-components.css" />
+</head>
+<body>
+  <div class="app-shell">
 
-    <div class="app-shell" id="appShell">
-      <header class="topbar">
-        <div class="brand-lockup" aria-label="Frames">
-          <img class="brand-mark" src="./assets/app-logo.svg" alt="Frames" />
-          <div>
-            <p class="eyebrow" id="topbarEyebrow">Frames</p>
-            <h1 id="topbarTitle">Studio</h1>
-          </div>
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <div class="brand-lockup">
+        <img class="brand-mark"
+          src="./assets/picfactory-logo.png" alt="" />
+        <div>
+          <p class="eyebrow" id="topbarEyebrow">
+            Frames
+          </p>
+          <h1 id="topbarTitle">Studio</h1>
         </div>
-        <button class="icon-button" id="topbarAction" type="button"
-                aria-label="Action principale" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-        </button>
-      </header>
+      </div>
+      <button class="icon-button"
+        id="topbarAction"
+        type="button"
+        aria-label="Ajouter"
+        hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </button>
+    </header>
 
-      <main id="viewContainer"></main>
+    <!-- CONTENU PRINCIPAL -->
+    <main>
+      <div id="viewContainer"></div>
+    </main>
 
-      <nav class="module-tabs" id="moduleTabs"
-           aria-label="Navigation principale"></nav>
-    </div>
+    <!-- TAB BAR FIXE -->
+    <nav class="module-tabs"
+      id="moduleTabs"
+      aria-label="Navigation principale">
+    </nav>
 
-    <script src="./app.js" type="module"></script>
-  </body>
+  </div>
+
+  <script src="./app.js" type="module"></script>
+</body>
 </html>
