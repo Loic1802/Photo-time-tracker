@@ -6,7 +6,7 @@
 /* ─── Utility : glass card ───────────────────────────── */
 
 .glass-card {
-  background: rgba(255,255,255,0.55);
+  background: rgba(255,255,255,0.35);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(255,255,255,0.75);
@@ -81,7 +81,7 @@
   flex-direction: column;
   gap: 7px;
   cursor: pointer;
-  background: rgba(255,255,255,0.55);
+  background: rgba(255,255,255,0.35);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(255,255,255,0.75);
@@ -478,6 +478,145 @@
   line-height: 1.5;
 }
 
+/* ── Checklist — ajout inline (offre) ───────────────── */
+
+.checklist-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(30,50,70,.07);
+}
+
+.checklist-add-input {
+  flex: 1;
+  /* hérite des styles input globaux */
+}
+
+.checklist-add-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #F59332, #D4700A);
+  border: none;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(213,112,10,.3);
+  transition: opacity .15s, transform .15s;
+}
+.checklist-add-btn:active { opacity: .82; transform: scale(.9); }
+
+.checklist-delete {
+  font-size: 15px;
+  color: rgba(192,48,48,.35);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+  flex-shrink: 0;
+  transition: color .12s;
+}
+.checklist-delete:active { color: rgba(192,48,48,.85); }
+
+/* Message si profil materiel vide */
+.materiel-empty-hint {
+  font-size: .8rem;
+  color: rgba(30,50,70,.4);
+  line-height: 1.7;
+  padding: 4px 0 6px;
+}
+
+.btn-link-profil {
+  background: none;
+  border: none;
+  color: #D4700A;
+  font-family: 'DM Sans', sans-serif;
+  font-size: .8rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ── Profil — section matériel ───────────────────────── */
+
+.materiel-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.materiel-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(30,50,70,.06);
+}
+.materiel-item:last-child { border-bottom: none; }
+
+.materiel-label {
+  font-size: .85rem;
+  color: rgba(20,40,60,.82);
+  flex: 1;
+  min-width: 0;
+}
+
+.materiel-item-empty {
+  font-size: .78rem;
+  color: rgba(30,50,70,.3);
+  padding: 6px 0 4px;
+}
+
+.materiel-delete {
+  font-size: 16px;
+  color: rgba(192,48,48,.4);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.materiel-delete:active { color: rgba(192,48,48,.85); }
+
+.materiel-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.materiel-add-input { flex: 1; }
+
+/* ── Btn lien discret (Modifier dans offre) ──────────── */
+
+.btn-link-edit {
+  background: none;
+  border: none;
+  padding: 3px 0 0;
+  font-family: 'DM Sans', sans-serif;
+  font-size: .72rem;
+  font-weight: 500;
+  color: rgba(30,50,70,.35);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(30,50,70,.2);
+  letter-spacing: .01em;
+}
+.btn-link-edit:active { color: rgba(213,112,10,.8); }
+
 /* Card taux implicite */
 .taux-impl {
   display: flex;
@@ -718,7 +857,7 @@
   align-items: center;
   gap: 6px;
   padding: 15px 16px;
-  background: rgba(255,255,255,0.55);
+  background: rgba(255,255,255,0.35);
   border: 1px solid rgba(255,255,255,0.75);
   border-radius: 14px;
   color: rgba(30,50,70,0.5);

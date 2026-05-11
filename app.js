@@ -98,10 +98,11 @@ function _esc(str) {
 // TIMER — état module-level (survit à la navigation)
 // ════════════════════════════════════════════════════════
 
-let _timerInterval = null;
-let _timerStart    = null;
-let _timerCat      = 'shooting';
-let _timerSeconds  = 0;
+let _timerInterval   = null;
+let _timerStart      = null;
+let _timerCat        = 'shooting';
+let _timerSeconds    = 0;
+let _editingProjetId = null; // null = création, string = édition du projet correspondant
 
 // ════════════════════════════════════════════════════════
 // SHELL — navigation + topbar
@@ -207,21 +208,6 @@ function _renderView(view, el) {
 const CAT_COLORS = Object.fromEntries(
   Object.entries(CATEGORIES).map(([k, v]) => [k, v.color])
 );
-
-const CHECKLIST_SUGGESTIONS = {
-  mariage:    ['Boîtier principal', 'Boîtier backup', 'Flash speedlite',
-               'Objectif 35mm', 'Objectif 85mm', 'Batteries ×4',
-               'Cartes mémoire ×6', 'Réflecteur', 'Sac photo'],
-  portrait:   ['Boîtier principal', 'Objectif 85mm', 'Réflecteur',
-               'Trépied', 'Fond studio', 'Batteries ×2', 'Cartes mémoire'],
-  corporate:  ['Boîtier principal', 'Objectif 24-70mm', 'Flash studio',
-               'Trépied', 'Fond studio', 'Batteries ×2', 'Cartes mémoire', 'Laptop'],
-  event:      ['Boîtier principal', 'Boîtier backup', 'Flash speedlite',
-               'Objectif 24-70mm', 'Objectif 70-200mm', 'Batteries ×4', 'Cartes mémoire ×4'],
-  commercial: ['Boîtier principal', 'Flash studio', 'Trépied',
-               'Fond studio', 'Objectif 24-70mm', 'Laptop', 'Cartes mémoire'],
-  autre:      ['Boîtier principal', 'Batteries ×2', 'Cartes mémoire'],
-};
 
 const TYPE_LABELS = {
   corporate:  'Corporate',
@@ -351,13 +337,23 @@ function _statutPill(p) {
 
 // ─── Bottom sheet — nouveau projet ───────────────────────
 
-function _openNewProjectSheet() {
+function _openNewProjectSheet(editProjet = null) {
   if (document.querySelector('.bottom-sheet')) return; // déjà ouvert
+
+  const isEdit  = editProjet !== null;
+  const types   = [
+    ['corporate', 'Corporate'], ['portrait', 'Portrait'],
+    ['mariage',   'Mariage'],   ['event',    'Événement'],
+    ['commercial','Commercial'],['autre',    'Autre'],
+  ];
 
   const overlay = document.createElement('div');
   overlay.className = 'sheet-overlay';
   overlay.id = 'sheetOverlay';
-  overlay.addEventListener('click', _closeSheet);
+  overlay.addEventListener('click', () => {
+    if (!isEdit) _editingProjetId = null; // reset si fermeture sans save
+    _closeSheet();
+  });
 
   const sheet = document.createElement('div');
   sheet.className = 'bottom-sheet';
@@ -365,7 +361,7 @@ function _openNewProjectSheet() {
   sheet.innerHTML = `
     <div class="sheet-handle"></div>
     <div class="sheet-header">
-      <h2 class="sheet-title">Nouveau projet</h2>
+      <h2 class="sheet-title">${isEdit ? 'Modifier le projet' : 'Nouveau projet'}</h2>
       <button class="icon-button" id="closeSheet" type="button" aria-label="Fermer">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M18 6 6 18M6 6l12 12"/>
@@ -376,44 +372,48 @@ function _openNewProjectSheet() {
       <label for="nfNom">
         Nom du projet
         <input id="nfNom" name="nom" type="text"
-          placeholder="ex. Shooting corporate ACME" autocomplete="off" required />
+          placeholder="ex. Shooting corporate ACME" autocomplete="off" required
+          value="${isEdit ? _esc(editProjet.nom) : ''}" />
       </label>
       <label for="nfClient">
         Client
         <input id="nfClient" name="clientNom" type="text"
-          placeholder="Nom du client ou de l'entreprise" autocomplete="off" />
+          placeholder="Nom du client ou de l'entreprise" autocomplete="off"
+          value="${isEdit && editProjet.clientNom ? _esc(editProjet.clientNom) : ''}" />
       </label>
       <div class="form-row">
         <label for="nfType">
           Type
           <select id="nfType" name="type">
-            <option value="corporate">Corporate</option>
-            <option value="portrait">Portrait</option>
-            <option value="mariage">Mariage</option>
-            <option value="event">Événement</option>
-            <option value="commercial">Commercial</option>
-            <option value="autre">Autre</option>
+            ${types.map(([v, l]) =>
+              `<option value="${v}"${isEdit && editProjet.type === v ? ' selected' : ''}>${l}</option>`
+            ).join('')}
           </select>
         </label>
         <label for="nfDate">
           Date prévue
-          <input id="nfDate" name="datePrevue" type="date" />
+          <input id="nfDate" name="datePrevue" type="date"
+            value="${isEdit && editProjet.datePrevue ? editProjet.datePrevue : ''}" />
         </label>
       </div>
       <label for="nfPrix">
         Prix facturé (CHF)
         <input id="nfPrix" name="prixFacture" type="number"
-          placeholder="0" min="0" step="50" inputmode="numeric" />
+          placeholder="0" min="0" step="50" inputmode="numeric"
+          value="${isEdit && editProjet.prixFacture ? editProjet.prixFacture : ''}" />
       </label>
       <button class="btn-action sheet-submit" type="submit">
-        Créer le projet
+        ${isEdit ? 'Enregistrer' : 'Créer le projet'}
       </button>
     </form>`;
 
   document.body.appendChild(overlay);
   document.body.appendChild(sheet);
 
-  $('closeSheet').addEventListener('click', _closeSheet);
+  $('closeSheet').addEventListener('click', () => {
+    _editingProjetId = null;
+    _closeSheet();
+  });
   $('newProjectForm').addEventListener('submit', _submitNewProject);
 
   // Animate in
@@ -465,6 +465,29 @@ function _submitNewProject(e) {
     clientId = contact.id;
   }
 
+  // ── Mode édition ──────────────────────────────────────
+  if (_editingProjetId) {
+    const idx = state.projets.findIndex(p => p.id === _editingProjetId);
+    if (idx !== -1) {
+      state.projets[idx].nom        = nom;
+      state.projets[idx].clientNom  = clientNom;
+      state.projets[idx].clientId   = clientId;
+      state.projets[idx].type       = form.type.value;
+      state.projets[idx].datePrevue = form.datePrevue.value || null;
+      state.projets[idx].prixFacture= Number(form.prixFacture.value) || null;
+      save.projets();
+    }
+    _editingProjetId = null;
+    _closeSheet();
+    // Re-render la sous-vue offre avec les nouvelles données
+    setTimeout(() => {
+      state.projetSubView = 'offre';
+      _refreshProjetSubView();
+    }, 360);
+    return;
+  }
+
+  // ── Mode création ─────────────────────────────────────
   const projet = {
     id:            _genId(),
     nom,
@@ -488,7 +511,7 @@ function _submitNewProject(e) {
   };
 
   state.projets.unshift(projet);
-  state.activeProjetId = projet.id; // sélectionne le nouveau projet dans le module Projet
+  state.activeProjetId = projet.id;
   save.projets();
 
   _closeSheet();
@@ -637,7 +660,6 @@ function _wireProjetSubView(sv, projet) {
 // ════════════════════════════════════════════════════════
 
 function _subviewOffre(projet) {
-  _ensureChecklist(projet);
 
   const totalH = _totalQuotaH(projet);
   const taux   = _calcTauxImplicite(projet, totalH);
@@ -670,6 +692,7 @@ function _subviewOffre(projet) {
               date,
               projet.prixFacture ? _fmtCHF(projet.prixFacture) : '',
             ].filter(Boolean).join(' · ')}</p>
+            <button class="btn-link-edit" id="btnEditProjet" type="button">Modifier</button>
           </div>
           <div class="taux-impl ${tauxCls}" id="tauxImplCard">
             <p class="taux-impl-val" id="tauxImplVal">
@@ -705,17 +728,7 @@ function _subviewOffre(projet) {
       <!-- Checklist matériel -->
       <div class="offre-section glass-card">
         <p class="offre-section-title">Matériel</p>
-        <ul class="checklist">
-          ${projet.checklist.map(item => `
-            <li class="checklist-item${item.checked ? ' is-checked' : ''}">
-              <label class="checklist-label">
-                <input type="checkbox" class="checklist-cb"
-                  data-item-id="${item.id}"
-                  ${item.checked ? 'checked' : ''} />
-                <span>${_esc(item.label)}</span>
-              </label>
-            </li>`).join('')}
-        </ul>
+        ${_renderChecklistSection(projet)}
       </div>
 
       <!-- CTA -->
@@ -732,20 +745,17 @@ function _wireOffre(projet) {
     el.addEventListener('input', () => _onQuotaChange(projet))
   );
 
-  // Checklist — auto-save + toggle visuel
-  document.querySelectorAll('.checklist-cb').forEach(cb =>
-    cb.addEventListener('change', e => {
-      const id      = e.target.dataset.itemId;
-      const checked = e.target.checked;
-      e.target.closest('.checklist-item')?.classList.toggle('is-checked', checked);
-      const idx = state.projets.findIndex(p => p.id === projet.id);
-      if (idx !== -1) {
-        const i = state.projets[idx].checklist.findIndex(x => x.id === id);
-        if (i !== -1) state.projets[idx].checklist[i].checked = checked;
-        save.projets();
-      }
-    })
-  );
+  // Checklist — toggle avec upsert (items profil pas encore dans proj.checklist)
+  _wireChecklistSection(projet);
+
+  // Lien "aller au Profil" si matériel vide
+  $('btnGoToProfil')?.addEventListener('click', () => navigateTo('profil'));
+
+  // Modifier le projet → ouvre le sheet en mode édition
+  $('btnEditProjet')?.addEventListener('click', () => {
+    _editingProjetId = projet.id;
+    _openNewProjectSheet(projet);
+  });
 
   // Démarrer le chrono → sous-onglet Temps
   $('btnStartChrono')?.addEventListener('click', () => {
@@ -1501,16 +1511,144 @@ function _fmtH(h) {
   return (Math.round(h * 10) / 10) + 'h';
 }
 
-function _ensureChecklist(projet) {
-  if (projet.checklist.length > 0) return;
-  const suggestions = CHECKLIST_SUGGESTIONS[projet.type] ?? CHECKLIST_SUGGESTIONS['autre'];
-  projet.checklist = suggestions.map(label => ({ id: _genId(), label, checked: false }));
-  const idx = state.projets.findIndex(p => p.id === projet.id);
-  if (idx !== -1) {
-    state.projets[idx].checklist = projet.checklist;
-    save.projets();
-  }
+// ════════════════════════════════════════════════════════
+// MATÉRIEL / CHECKLIST — logique profil-driven
+// ════════════════════════════════════════════════════════
+
+/**
+ * Génère le HTML de la section matériel dans Offre.
+ * Sources : user.materiel (actif) + projet.checklist items custom.
+ * L'état checked est lu depuis projet.checklist par id.
+ */
+function _renderChecklistSection(projet) {
+  const materiel = (state.user?.materiel ?? []).filter(m => m.actif !== false);
+  const customItems = (projet.checklist ?? []).filter(c => c.isCustom);
+
+  const noMateriel = materiel.length === 0 && customItems.length === 0;
+
+  const profilRows = materiel.map(m => {
+    const entry   = (projet.checklist ?? []).find(c => c.id === m.id);
+    const checked = entry?.checked ?? false;
+    return `
+      <li class="checklist-item${checked ? ' is-checked' : ''}">
+        <label class="checklist-label">
+          <input type="checkbox" class="checklist-cb"
+            data-item-id="${m.id}"
+            data-item-label="${_esc(m.label)}"
+            data-is-custom="false"
+            ${checked ? 'checked' : ''} />
+          <span>${_esc(m.label)}</span>
+        </label>
+      </li>`;
+  }).join('');
+
+  const customRows = customItems.map(c => `
+    <li class="checklist-item${c.checked ? ' is-checked' : ''}">
+      <label class="checklist-label">
+        <input type="checkbox" class="checklist-cb"
+          data-item-id="${c.id}"
+          data-item-label="${_esc(c.label)}"
+          data-is-custom="true"
+          ${c.checked ? 'checked' : ''} />
+        <span>${_esc(c.label)}</span>
+      </label>
+      <button class="checklist-delete" data-item-id="${c.id}"
+        type="button" aria-label="Supprimer">×</button>
+    </li>`).join('');
+
+  return `
+    ${noMateriel ? `
+      <p class="materiel-empty-hint">
+        Aucun matériel dans ton profil.
+        <button class="btn-link-profil" id="btnGoToProfil" type="button">Ajouter dans Profil →</button>
+      </p>` : `
+      <ul class="checklist">
+        ${profilRows}
+        ${customRows}
+      </ul>`}
+    <div class="checklist-add-row">
+      <input id="checklistNewItem" class="checklist-add-input"
+        type="text" placeholder="Ajouter pour ce projet…"
+        autocapitalize="sentences" autocomplete="off" />
+      <button class="checklist-add-btn" id="btnAddChecklistItem" type="button"
+        aria-label="Ajouter">+</button>
+    </div>`;
 }
+
+function _wireChecklistSection(projet) {
+  // Toggles checkboxes — upsert dans projet.checklist
+  document.querySelectorAll('.checklist-cb').forEach(cb =>
+    cb.addEventListener('change', e => {
+      const id       = e.target.dataset.itemId;
+      const label    = e.target.dataset.itemLabel ?? '';
+      const isCustom = e.target.dataset.isCustom === 'true';
+      const checked  = e.target.checked;
+      e.target.closest('.checklist-item')?.classList.toggle('is-checked', checked);
+      const idx = state.projets.findIndex(p => p.id === projet.id);
+      if (idx !== -1) {
+        const i = state.projets[idx].checklist.findIndex(x => x.id === id);
+        if (i !== -1) {
+          state.projets[idx].checklist[i].checked = checked;
+        } else {
+          state.projets[idx].checklist.push({ id, label, checked, isCustom });
+        }
+        save.projets();
+      }
+    })
+  );
+
+  // Supprimer item custom
+  document.querySelectorAll('.checklist-delete').forEach(btn =>
+    btn.addEventListener('click', e => {
+      const id  = e.currentTarget.dataset.itemId;
+      const idx = state.projets.findIndex(p => p.id === projet.id);
+      if (idx !== -1) {
+        state.projets[idx].checklist = state.projets[idx].checklist.filter(c => c.id !== id);
+        save.projets();
+        // Refresh uniquement la section checklist
+        const section = document.querySelector('.offre-section .checklist')?.closest('.offre-section')
+          ?? document.querySelector('.offre-section:has(.checklist-add-row)');
+        _refreshChecklistSection(state.projets[idx]);
+      }
+    })
+  );
+
+  // Ajouter item custom
+  const addFn = () => _addCustomChecklistItem(projet);
+  $('btnAddChecklistItem')?.addEventListener('click', addFn);
+  $('checklistNewItem')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); addFn(); }
+  });
+}
+
+function _addCustomChecklistItem(projet) {
+  const input = $('checklistNewItem');
+  const label = input?.value.trim();
+  if (!label) { input?.focus(); return; }
+
+  const item = { id: _genId(), label, checked: false, isCustom: true };
+  const idx  = state.projets.findIndex(p => p.id === projet.id);
+  if (idx !== -1) {
+    state.projets[idx].checklist.push(item);
+    save.projets();
+    _refreshChecklistSection(state.projets[idx]);
+  }
+  if (input) input.value = '';
+}
+
+function _refreshChecklistSection(projet) {
+  // Re-render uniquement le contenu de la card matériel (sans toucher aux quotas)
+  const card = document.querySelector('.offre-section.glass-card:has(.checklist-add-row)')
+    ?? document.querySelector('.offre-section.glass-card:last-of-type');
+  if (!card) { _refreshProjetSubView(); return; }
+  const title = card.querySelector('.offre-section-title');
+  // Garde le titre, remplace le reste
+  card.innerHTML = `<p class="offre-section-title">Matériel</p>${_renderChecklistSection(projet)}`;
+  _wireChecklistSection(projet);
+  $('btnGoToProfil')?.addEventListener('click', () => navigateTo('profil'));
+}
+
+// _ensureChecklist supprimé — remplacé par la logique matériel profil (Phase 4)
 
 function _ico_folder_lg() {
   return `<svg class="empty-icon" width="52" height="52" viewBox="0 0 24 24" fill="none"
@@ -1607,6 +1745,24 @@ function _viewProfil() {
         Enregistrer
       </button>
 
+      <!-- ── Mon matériel ── -->
+      <div class="profil-section glass-card">
+        <p class="profil-section-title">Mon matériel habituel</p>
+        <p class="profil-section-hint" style="margin:0 0 4px;">
+          Affiché dans la checklist de chaque projet.
+        </p>
+        <ul class="materiel-list" id="materielList">
+          ${_renderMaterielList()}
+        </ul>
+        <div class="materiel-add-row">
+          <input id="materielNewItem" class="materiel-add-input"
+            type="text" placeholder="Ex. Boîtier Sony A7 IV"
+            autocapitalize="sentences" autocomplete="off" />
+          <button class="checklist-add-btn" id="btnAddMateriel"
+            type="button" aria-label="Ajouter">+</button>
+        </div>
+      </div>
+
       <!-- ── Données ── -->
       <div class="profil-section glass-card">
         <p class="profil-section-title">Données</p>
@@ -1619,6 +1775,56 @@ function _viewProfil() {
       </div>
 
     </div>`;
+}
+
+// ─── Profil : matériel ────────────────────────────────
+
+function _renderMaterielList() {
+  const items = (state.user?.materiel ?? []).filter(m => m.actif !== false);
+  if (!items.length) {
+    return `<li class="materiel-item-empty">Aucun item — ajoute ci-dessous.</li>`;
+  }
+  return items.map(m => `
+    <li class="materiel-item">
+      <span class="materiel-label">${_esc(m.label)}</span>
+      <button class="materiel-delete" data-materiel-id="${m.id}"
+        type="button" aria-label="Supprimer">×</button>
+    </li>`).join('');
+}
+
+function _addMaterielItem() {
+  const input = $('materielNewItem');
+  const label = input?.value.trim();
+  if (!label) { input?.focus(); return; }
+
+  if (!state.user) state.user = {};
+  if (!state.user.materiel) state.user.materiel = [];
+
+  state.user.materiel.push({ id: _genId(), label, actif: true });
+  save.user();
+
+  const el = $('materielList');
+  if (el) {
+    el.innerHTML = _renderMaterielList();
+    _wireMaterielDeletes();
+  }
+  if (input) input.value = '';
+  input?.focus();
+}
+
+function _wireMaterielDeletes() {
+  document.querySelectorAll('.materiel-delete').forEach(btn =>
+    btn.addEventListener('click', e => {
+      const id  = e.currentTarget.dataset.materielId;
+      if (state.user?.materiel) {
+        const idx = state.user.materiel.findIndex(m => m.id === id);
+        if (idx !== -1) state.user.materiel[idx].actif = false; // soft delete
+        save.user();
+        const el = $('materielList');
+        if (el) { el.innerHTML = _renderMaterielList(); _wireMaterielDeletes(); }
+      }
+    })
+  );
 }
 
 // ─── Profil : wiring ──────────────────────────────────
@@ -1637,6 +1843,16 @@ function _wireProfilView() {
       location.reload();
     }
   });
+
+  // Matériel — ajouter
+  const doAdd = () => _addMaterielItem();
+  $('btnAddMateriel')?.addEventListener('click', doAdd);
+  $('materielNewItem')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); doAdd(); }
+  });
+
+  // Matériel — supprimer
+  _wireMaterielDeletes();
 }
 
 function _calcTaux(revenu, jours, charges) {
@@ -1670,6 +1886,7 @@ function _saveProfil() {
     prenom, specialite, revenuCible, joursFact, charges,
     tauxPlancher: plancher,
     tauxCible:    cible,
+    materiel:     state.user?.materiel ?? [], // préservé — géré indépendamment
   };
   save.user();
 
@@ -1742,6 +1959,17 @@ function _ico_user() {
     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
     <circle cx="12" cy="7" r="4"/>
+  </svg>`;
+}
+
+function _ico_clock_plus() {
+  return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="10"/>
+    <polyline points="12 6 12 12 15.5 14"/>
+    <line x1="12" y1="19" x2="12" y2="22"/>
+    <line x1="10.5" y1="20.5" x2="13.5" y2="20.5"/>
   </svg>`;
 }
 
