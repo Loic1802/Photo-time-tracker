@@ -1760,3 +1760,31 @@ select option {
     grid-column: 1 / -1;
   }
 }
+
+/* ════════════════════════════════════════════════════════
+   FAB GLOBAL — bouton flottant création projet
+   ════════════════════════════════════════════════════════ */
+
+.fab-global {
+  position: fixed;
+  bottom: calc(var(--tab-h) + 16px + env(safe-area-inset-bottom, 0px));
+  right: 20px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #F59332, #D4700A);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(213,112,10,.45);
+  z-index: 150;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.fab-global:active {
+  transform: scale(.92);
+  box-shadow: 0 2px 10px rgba(213,112,10,.35);
+}

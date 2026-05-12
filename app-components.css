@@ -1597,3 +1597,457 @@
   font-weight: 600;
   box-shadow: 0 1px 4px rgba(20,40,60,0.1);
 }
+
+/* ════════════════════════════════════════════════════════
+   MENU SHEET — actions projet (bottom sheet contextuel)
+   ════════════════════════════════════════════════════════ */
+
+.menu-sheet-actions {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 20px 0;
+  gap: 4px;
+}
+.menu-sheet-item {
+  display: block;
+  width: 100%;
+  padding: 15px 16px;
+  text-align: left;
+  background: rgba(255,255,255,0.55);
+  border: 1px solid rgba(255,255,255,0.7);
+  border-radius: 12px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: .9rem;
+  font-weight: 500;
+  color: rgba(20,40,60,0.85);
+  cursor: pointer;
+  transition: opacity .12s;
+}
+.menu-sheet-item:active              { opacity: .75; }
+.menu-sheet-item--warn               { color: #B8600A; }
+.menu-sheet-item--danger             { color: #C03030; }
+
+/* ════════════════════════════════════════════════════════
+   PRÉPARER — Prix conseillé
+   ════════════════════════════════════════════════════════ */
+
+.prix-conseil-card {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.prix-suggestion {
+  background: rgba(46,125,82,.07);
+  border: 1px solid rgba(46,125,82,.2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.suggestion-label {
+  font-size: .72rem;
+  font-weight: 600;
+  color: #2E7D52;
+  margin: 0;
+  letter-spacing: .01em;
+}
+
+.suggestion-val {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: rgba(20,40,60,.9);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.suggestion-detail {
+  font-size: .72rem;
+  color: rgba(30,50,70,.45);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.btn-suggestion-apply {
+  margin-top: 4px;
+  padding: 8px 14px;
+  background: rgba(46,125,82,.1);
+  border: 1px solid rgba(46,125,82,.3);
+  border-radius: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: .8rem;
+  font-weight: 600;
+  color: #2E7D52;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background .12s;
+}
+.btn-suggestion-apply:active { background: rgba(46,125,82,.18); }
+
+.prix-calcul {
+  background: rgba(58,122,191,.07);
+  border: 1px solid rgba(58,122,191,.2);
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.calcul-label {
+  font-size: .72rem;
+  color: #3A7ABF;
+  margin: 0;
+  font-weight: 500;
+}
+
+.calcul-val {
+  font-size: 1rem;
+  font-weight: 700;
+  color: rgba(20,40,60,.88);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+/* ════════════════════════════════════════════════════════
+   PRÉPARER — Feuille de route / Shots
+   ════════════════════════════════════════════════════════ */
+
+.feuille-route {
+  /* hérite .offre-section + .glass-card */
+}
+
+.shots-label {
+  font-size: .68rem;
+  font-weight: 700;
+  color: rgba(30,50,70,.38);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin: 8px 0 4px;
+}
+
+.shot-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(30,50,70,.06);
+}
+.shot-row:last-child { border-bottom: none; }
+
+.shot-check {
+  width: 17px;
+  min-height: 17px;
+  height: 17px;
+  border-radius: 4px;
+  accent-color: #D4700A;
+  flex-shrink: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.shot-label {
+  flex: 1;
+  font-size: .83rem;
+  color: rgba(20,40,60,.82);
+  line-height: 1.4;
+  min-width: 0;
+  transition: color .15s, text-decoration .15s;
+}
+.shot-label.is-done {
+  color: rgba(30,50,70,.3);
+  text-decoration: line-through;
+}
+
+.shot-delete {
+  font-size: 15px;
+  line-height: 1;
+  color: rgba(192,48,48,.35);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 3px;
+  flex-shrink: 0;
+  transition: color .12s;
+}
+.shot-delete:active { color: rgba(192,48,48,.8); }
+
+.shot-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(30,50,70,.07);
+}
+
+.btn-shot-add {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #F59332, #D4700A);
+  border: none;
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(213,112,10,.3);
+  transition: opacity .15s, transform .15s;
+}
+.btn-shot-add:active { opacity: .82; transform: scale(.9); }
+
+/* ════════════════════════════════════════════════════════
+   STUDIO — Hero card (projet en cours)
+   ════════════════════════════════════════════════════════ */
+
+.studio-hero-card {
+  margin: 12px 16px 0;
+  padding: 18px 20px 16px;
+  background: linear-gradient(135deg, rgba(245,147,50,.14), rgba(212,112,10,.08));
+  border-color: rgba(213,112,10,.3);
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.studio-hero-card:active {
+  transform: scale(.98);
+  box-shadow: 0 1px 6px rgba(213,112,10,.18);
+}
+
+.hero-eyebrow {
+  font-size: .62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: #B8600A;
+  margin: 0 0 6px;
+}
+
+.hero-nom {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: rgba(20,40,60,.92);
+  margin: 0 0 5px;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+
+.hero-meta {
+  font-size: .76rem;
+  color: rgba(30,50,70,.45);
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.hero-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hero-taux {
+  font-size: .78rem;
+  font-weight: 600;
+  color: #B8600A;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-arrow {
+  font-size: .9rem;
+  color: rgba(30,50,70,.35);
+}
+
+/* ════════════════════════════════════════════════════════
+   STUDIO — Next card (prochain projet)
+   ════════════════════════════════════════════════════════ */
+
+.studio-next-card {
+  margin: 8px 16px 0;
+  padding: 14px 18px;
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.studio-next-card:active {
+  transform: scale(.98);
+  box-shadow: 0 1px 4px rgba(30,50,80,.04);
+}
+
+.next-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.next-eyebrow {
+  font-size: .62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: rgba(30,50,70,.38);
+  margin: 0;
+}
+
+.next-nom {
+  font-size: .92rem;
+  font-weight: 600;
+  color: rgba(20,40,60,.9);
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.next-meta {
+  font-size: .74rem;
+  color: rgba(30,50,70,.42);
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.next-date {
+  font-weight: 600;
+  color: rgba(30,50,70,.55);
+}
+
+/* ════════════════════════════════════════════════════════
+   STUDIO — Insight card
+   ════════════════════════════════════════════════════════ */
+
+.insight-card {
+  margin: 8px 16px 0;
+  padding: 13px 16px;
+  background: rgba(46,125,82,.06);
+  border-color: rgba(46,125,82,.18);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.insight-eyebrow {
+  font-size: .62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #2E7D52;
+  margin: 0;
+}
+
+.insight-text {
+  font-size: .82rem;
+  color: rgba(20,40,60,.75);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.insight-text strong {
+  color: rgba(20,40,60,.9);
+  font-weight: 700;
+}
+
+/* ════════════════════════════════════════════════════════
+   BILAN — Clôture animée (overlay)
+   ════════════════════════════════════════════════════════ */
+
+@keyframes clotureIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes clotureCardIn {
+  from { opacity: 0; transform: scale(.88); }
+  to   { opacity: 1; transform: scale(1);   }
+}
+
+.cloture-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(10,25,40,.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: clotureIn .4s ease forwards;
+}
+
+.cloture-card {
+  background: rgba(245,248,252,.97);
+  border: 1px solid rgba(255,255,255,.85);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(20,40,60,.22);
+  padding: 36px 32px 32px;
+  max-width: 300px;
+  width: calc(100vw - 64px);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  animation: clotureCardIn .45s cubic-bezier(.32,.72,0,1) .05s both;
+}
+
+.cloture-check {
+  font-size: 2.6rem;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.cloture-titre {
+  font-size: 1rem;
+  font-weight: 700;
+  color: rgba(20,40,60,.9);
+  margin: 0;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.cloture-taux {
+  font-size: .88rem;
+  font-weight: 600;
+  color: rgba(30,50,70,.5);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+.cloture-verdict {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 6px 0 0;
+  line-height: 1.3;
+}
+.cloture-verdict.is-profit  { color: #2E7D52; }
+.cloture-verdict.is-warn    { color: #D4800A; }
+.cloture-verdict.is-loss    { color: #C03030; }
+.cloture-verdict.is-neutral { color: rgba(20,40,60,.55); }
+
+/* ════════════════════════════════════════════════════════
+   UTILITAIRE — bouton texte discret
+   ════════════════════════════════════════════════════════ */
+
+.btn-text-muted {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  background: none;
+  border: none;
+  font-family: 'DM Sans', sans-serif;
+  font-size: .82rem;
+  font-weight: 500;
+  color: rgba(30,50,70,.4);
+  cursor: pointer;
+  text-align: center;
+  transition: color .12s;
+}
+.btn-text-muted:active { color: rgba(30,50,70,.7); }

@@ -49,11 +49,11 @@ const CATEGORIES = {
 // ════════════════════════════════════════════════════════
 
 const STATUTS = {
-  brouillon: { label: 'Brouillon',  color: '#8AAAC8', bg: 'rgba(138,170,200,0.18)' },
-  attente:   { label: 'En attente', color: '#E09050', bg: 'rgba(224,144,80,0.18)'  },
-  encours:   { label: 'En cours',   color: '#5AAE82', bg: 'rgba(90,174,130,0.18)'  },
-  termine:   { label: 'Terminé',    color: '#2E7D52', bg: 'rgba(46,125,82,0.18)'   },
-  sanssuite: { label: 'Sans suite', color: '#C03030', bg: 'rgba(192,48,48,0.12)'   },
+  brouillon: { label: 'Brouillon',     color: 'rgba(30,50,70,0.35)', bg: 'rgba(30,50,70,0.07)'    },
+  attente:   { label: 'Offre envoyée', color: '#B8600A',             bg: 'rgba(213,112,10,0.12)'  },
+  encours:   { label: 'En cours',      color: '#3A7ABF',             bg: 'rgba(58,122,191,0.12)'  },
+  termine:   { label: 'Terminé',       color: '#2E7D52',             bg: 'rgba(46,125,82,0.13)'   },
+  sanssuite: { label: 'Sans suite',    color: 'rgba(30,50,70,0.25)', bg: 'rgba(30,50,70,0.05)'   },
 };
 
 // ════════════════════════════════════════════════════════
@@ -66,7 +66,7 @@ const state = {
   contacts:       Storage.get('contacts') ?? [],
   projets:        Storage.get('projets')  ?? [],
   activeProjetId: null,    // projet sélectionné dans le module Projet
-  projetSubView:  'offre', // sous-onglet actif
+  projetSubView:  'preparer', // sous-onglet actif
 };
 
 const save = {
@@ -123,15 +123,16 @@ let _profilMode      = 'simple'; // 'simple' | 'avance' — mode objectifs finan
 // ════════════════════════════════════════════════════════
 
 const TABS = [
-  { id: 'studio',      label: 'Studio',    icon: _ico_folder()  },
-  { id: 'prospection', label: 'Prospect.', icon: _ico_users()   },
-  { id: 'projet',      label: 'Projet',    icon: _ico_camera()  },
-  { id: 'insights',    label: 'Insights',  icon: _ico_chart()   },
-  { id: 'profil',      label: 'Profil',    icon: _ico_user()    },
+  { id: 'studio',      label: 'Studio',   icon: _ico_folder()  },
+  { id: 'prospection', label: 'Contacts', icon: _ico_users()   },
+  { id: 'projet',      label: 'Projets',  icon: _ico_camera()  },
+  { id: 'insights',    label: 'Analyse',  icon: _ico_chart()   },
+  { id: 'profil',      label: 'Moi',      icon: _ico_user()    },
 ];
 
 function showShell(view = 'studio') {
   _renderTabBar();
+  _injectFAB();
   navigateTo(view);
 }
 
@@ -155,6 +156,10 @@ function navigateTo(view) {
   document.querySelectorAll('[data-tab]').forEach(btn =>
     btn.classList.toggle('is-active', btn.dataset.tab === view)
   );
+
+  // FAB : masqué sur Profil uniquement
+  const fab = $('fabGlobal');
+  if (fab) fab.style.display = view === 'profil' ? 'none' : '';
 
   _renderTopbar(view);
 
@@ -236,6 +241,58 @@ function _viewStudio() {
   const caMois    = _statsCaMois();
   const tauxMoyen = _statsTauxMoyen();
 
+  // ── Hero card — projet en cours (le plus récent) ──────
+  const enCours = state.projets.find(p => p.statut === 'encours');
+  const heroHtml = enCours ? (() => {
+    const tauxAff = (() => {
+      const min = (enCours.sessions ?? []).reduce((s, x) => s + (Number(x.duree) || 0), 0);
+      if (min > 0 && Number(enCours.prixFacture) > 0)
+        return Math.round(Number(enCours.prixFacture) / (min / 60)) + ' CHF/h réel';
+      const qH = _totalQuotaH(enCours);
+      if (qH > 0 && Number(enCours.prixFacture) > 0)
+        return Math.round(Number(enCours.prixFacture) / qH) + ' CHF/h (offre)';
+      return '';
+    })();
+    const date = enCours.datePrevue
+      ? new Date(enCours.datePrevue).toLocaleDateString('fr-CH', { day: 'numeric', month: 'short' })
+      : '';
+    return `
+    <div class="studio-hero-card glass-card" data-hero-id="${enCours.id}" role="button" tabindex="0">
+      <p class="hero-eyebrow">En cours</p>
+      <p class="hero-nom">${_esc(enCours.nom)}</p>
+      <div class="hero-meta">
+        ${enCours.clientNom ? `<span>${_esc(enCours.clientNom)}</span>` : ''}
+        ${date ? `<span>·</span><span>${date}</span>` : ''}
+      </div>
+      <div class="hero-footer">
+        ${tauxAff ? `<span class="hero-taux">${tauxAff}</span>` : '<span></span>'}
+        <span class="hero-arrow">→</span>
+      </div>
+    </div>`;
+  })() : '';
+
+  // ── Next card — prochain par date (attente / brouillon) ──
+  const prochain = state.projets
+    .filter(p => (p.statut === 'attente' || p.statut === 'brouillon') && p.datePrevue)
+    .sort((a, b) => new Date(a.datePrevue) - new Date(b.datePrevue))[0] ?? null;
+  const nextHtml = prochain ? (() => {
+    const dateStr = new Date(prochain.datePrevue).toLocaleDateString('fr-CH',
+      { day: 'numeric', month: 'long' });
+    const s = STATUTS[prochain.statut] ?? STATUTS.brouillon;
+    return `
+    <div class="studio-next-card glass-card" data-next-id="${prochain.id}" role="button" tabindex="0">
+      <div class="next-header">
+        <p class="next-eyebrow">À venir</p>
+        <span class="statut-pill" style="color:${s.color};background:${s.bg};">${s.label}</span>
+      </div>
+      <p class="next-nom">${_esc(prochain.nom)}</p>
+      <div class="next-meta">
+        ${prochain.clientNom ? `<span>${_esc(prochain.clientNom)}</span><span>·</span>` : ''}
+        <span class="next-date">${dateStr}</span>
+      </div>
+    </div>`;
+  })() : '';
+
   const statsHtml = `
     <div class="stats-row">
       <div class="stat-card glass-card">
@@ -244,7 +301,7 @@ function _viewStudio() {
       </div>
       <div class="stat-card glass-card">
         <p class="stat-label">Taux moyen réel</p>
-        <p class="stat-value">${tauxMoyen !== null ? _fmtCHF(tauxMoyen) + '/h' : '—'}</p>
+        <p class="stat-value">${tauxMoyen !== null ? tauxMoyen + ' CHF/h' : '—'}</p>
       </div>
     </div>`;
 
@@ -260,6 +317,8 @@ function _viewStudio() {
       </div>`;
   }
 
+  const insightHtml = _renderInsightCard();
+
   const groups   = _groupByClient(state.projets);
   const listHtml = groups.map(({ clientNom, items }) => `
     <div class="client-group">
@@ -268,11 +327,81 @@ function _viewStudio() {
     </div>
   `).join('');
 
-  return statsHtml + `<div class="projet-list">${listHtml}</div>`;
+  return heroHtml + nextHtml + statsHtml + insightHtml + `<div class="projet-list">${listHtml}</div>`;
+}
+
+// ── Insight card (si ≥ 3 projets terminés) ────────────────
+function _renderInsightCard() {
+  const termines = state.projets.filter(p => p.statut === 'termine' && Number(p.prixFacture) > 0);
+  if (termines.length < 3) return '';
+
+  // Type le plus rentable (avec sessions, min 2 projets du même type)
+  const byType = {};
+  termines.forEach(p => {
+    const t = p.type ?? 'autre';
+    if (!byType[t]) byType[t] = { count: 0, totalPrix: 0, totalMin: 0 };
+    byType[t].count++;
+    byType[t].totalPrix += Number(p.prixFacture);
+    byType[t].totalMin  += (p.sessions ?? []).reduce((s, x) => s + (Number(x.duree) || 0), 0);
+  });
+
+  let bestType = null, bestTaux = 0;
+  Object.entries(byType).forEach(([t, d]) => {
+    if (d.count >= 2 && d.totalMin > 0) {
+      const taux = Math.round(d.totalPrix / (d.totalMin / 60));
+      if (taux > bestTaux) { bestTaux = taux; bestType = t; }
+    }
+  });
+
+  let insightText;
+  if (bestType) {
+    insightText = `Type le plus rentable : <strong>${TYPE_LABELS[bestType] ?? bestType}</strong> à <strong>${bestTaux} CHF/h</strong> en moyenne.`;
+  } else {
+    // Fallback : taux moyen global sur tous les terminés avec sessions
+    const avecSess = termines.filter(p => (p.sessions ?? []).length > 0);
+    if (!avecSess.length) return '';
+    const totMin  = avecSess.reduce((s, p) => s + (p.sessions ?? []).reduce((a, x) => a + (Number(x.duree) || 0), 0), 0);
+    const totPrix = avecSess.reduce((s, p) => s + Number(p.prixFacture), 0);
+    if (!totMin) return '';
+    const avg = Math.round(totPrix / (totMin / 60));
+    insightText = `Taux moyen réel : <strong>${avg} CHF/h</strong> sur ${avecSess.length} projet${avecSess.length > 1 ? 's' : ''} terminé${avecSess.length > 1 ? 's' : ''}.`;
+  }
+
+  return `
+    <div class="insight-card glass-card">
+      <p class="insight-eyebrow">💡 Insight</p>
+      <p class="insight-text">${insightText}</p>
+    </div>`;
 }
 
 function _wireStudio() {
   $('btnCreateFirst')?.addEventListener('click', _openNewProjectSheet);
+
+  // Hero card — ouvrir le projet en cours → Temps
+  const heroCard = $('viewContainer').querySelector('[data-hero-id]');
+  if (heroCard) {
+    heroCard.addEventListener('click', () => {
+      state.activeProjetId = heroCard.dataset.heroId;
+      state.projetSubView  = 'temps';
+      navigateTo('projet');
+    });
+    heroCard.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); heroCard.click(); }
+    });
+  }
+
+  // Next card — ouvrir le prochain projet → Préparer
+  const nextCard = $('viewContainer').querySelector('[data-next-id]');
+  if (nextCard) {
+    nextCard.addEventListener('click', () => {
+      state.activeProjetId = nextCard.dataset.nextId;
+      state.projetSubView  = 'preparer';
+      navigateTo('projet');
+    });
+    nextCard.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nextCard.click(); }
+    });
+  }
 
   // Cartes projet — clic sur la carte → ouvrir dans Projet
   $('viewContainer').querySelectorAll('[data-projet-id]').forEach(card => {
@@ -282,8 +411,10 @@ function _wireStudio() {
       const p   = state.projets.find(x => x.id === id);
       if (!p) return;
       state.activeProjetId = id;
-      // Sous-onglet intelligent : encours → Temps, sinon → Offre
-      state.projetSubView = (p.statut === 'encours') ? 'temps' : 'offre';
+      // Routing intelligent par statut
+      if      (p.statut === 'encours')  state.projetSubView = 'temps';
+      else if (p.statut === 'termine')  state.projetSubView = 'bilan';
+      else                              state.projetSubView = 'preparer';
       navigateTo('projet');
     });
     card.addEventListener('keydown', e => {
@@ -301,60 +432,78 @@ function _wireStudio() {
 }
 
 function _openProjetMenu(projetId, triggerEl) {
-  // Fermer un menu déjà ouvert
-  document.querySelector('.projet-context-menu')?.remove();
+  if (document.querySelector('.bottom-sheet')) return;
 
   const projet = state.projets.find(p => p.id === projetId);
   if (!projet) return;
 
-  const menu = document.createElement('div');
-  menu.className = 'projet-context-menu';
-  menu.innerHTML = `
-    <button class="ctx-item" data-action="modifier" type="button">Modifier</button>
-    <button class="ctx-item ctx-item--warn" data-action="sanssuite" type="button">Marquer sans suite</button>
-    <button class="ctx-item ctx-item--danger" data-action="supprimer" type="button">Supprimer</button>
+  const overlay = document.createElement('div');
+  overlay.className = 'sheet-overlay';
+  overlay.id = 'sheetOverlay';
+  overlay.addEventListener('click', _closeSheet);
+
+  const sheet = document.createElement('div');
+  sheet.className = 'bottom-sheet projet-menu-sheet';
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h2 class="sheet-title">${_esc(projet.nom)}</h2>
+    </div>
+    <div class="menu-sheet-actions">
+      <button class="menu-sheet-item" data-action="ouvrir" type="button">
+        Ouvrir le projet
+      </button>
+      <button class="menu-sheet-item" data-action="modifier" type="button">
+        Modifier
+      </button>
+      <button class="menu-sheet-item menu-sheet-item--warn" data-action="sanssuite" type="button">
+        Marquer sans suite
+      </button>
+      <button class="menu-sheet-item menu-sheet-item--danger" data-action="supprimer" type="button">
+        Supprimer
+      </button>
+    </div>
+    <div style="height:env(safe-area-inset-bottom,16px)"></div>
   `;
 
-  // Positionnement sous le bouton déclencheur
-  const rect = triggerEl.getBoundingClientRect();
-  Object.assign(menu.style, {
-    position: 'fixed',
-    top:      (rect.bottom + 6) + 'px',
-    right:    (window.innerWidth - rect.right) + 'px',
-    zIndex:   '300',
+  document.body.appendChild(overlay);
+  document.body.appendChild(sheet);
+
+  requestAnimationFrame(() => {
+    overlay.classList.add('is-visible');
+    sheet.classList.add('is-open');
   });
 
-  document.body.appendChild(menu);
-
-  // Fermer sur clic extérieur
-  const closeMenu = (ev) => {
-    if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('click', closeMenu, true); }
-  };
-  setTimeout(() => document.addEventListener('click', closeMenu, true), 10);
-
-  menu.querySelectorAll('.ctx-item').forEach(btn =>
+  sheet.querySelectorAll('.menu-sheet-item').forEach(btn =>
     btn.addEventListener('click', e => {
       const action = e.currentTarget.dataset.action;
-      menu.remove();
-      document.removeEventListener('click', closeMenu, true);
+      _closeSheet();
+      setTimeout(() => {
+        if (action === 'ouvrir') {
+          state.activeProjetId = projetId;
+          if      (projet.statut === 'encours') state.projetSubView = 'temps';
+          else if (projet.statut === 'termine') state.projetSubView = 'bilan';
+          else                                  state.projetSubView = 'preparer';
+          navigateTo('projet');
 
-      if (action === 'modifier') {
-        _editingProjetId = projetId;
-        _openNewProjectSheet(projet);
+        } else if (action === 'modifier') {
+          _editingProjetId = projetId;
+          _openEditProjetSheet(projet);
 
-      } else if (action === 'sanssuite') {
-        if (!confirm(`Marquer "${projet.nom}" sans suite ?`)) return;
-        const idx = state.projets.findIndex(p => p.id === projetId);
-        if (idx !== -1) { state.projets[idx].statut = 'sanssuite'; save.projets(); }
-        navigateTo('studio');
+        } else if (action === 'sanssuite') {
+          if (!confirm(`Marquer "${projet.nom}" sans suite ?`)) return;
+          const idx = state.projets.findIndex(p => p.id === projetId);
+          if (idx !== -1) { state.projets[idx].statut = 'sanssuite'; save.projets(); }
+          navigateTo('studio');
 
-      } else if (action === 'supprimer') {
-        if (!confirm(`Supprimer "${projet.nom}" définitivement ?`)) return;
-        state.projets = state.projets.filter(p => p.id !== projetId);
-        if (state.activeProjetId === projetId) state.activeProjetId = null;
-        save.projets();
-        navigateTo('studio');
-      }
+        } else if (action === 'supprimer') {
+          if (!confirm(`Supprimer "${projet.nom}" définitivement ?`)) return;
+          state.projets = state.projets.filter(p => p.id !== projetId);
+          if (state.activeProjetId === projetId) state.activeProjetId = null;
+          save.projets();
+          navigateTo('studio');
+        }
+      }, 360);
     })
   );
 }
@@ -367,6 +516,7 @@ function _statsCaMois() {
   const mois  = now.getMonth();
   return state.projets
     .filter(p => {
+      if (p.statut === 'sanssuite') return false;
       if (!p.datePrevue) return false;
       const d = new Date(p.datePrevue);
       return d.getFullYear() === annee && d.getMonth() === mois;
@@ -375,8 +525,16 @@ function _statsCaMois() {
 }
 
 function _statsTauxMoyen() {
-  // Nécessite les sessions (Phase 6) — retourne null → affiche "—"
-  return null;
+  const projetsOk = state.projets.filter(p =>
+    p.statut !== 'sanssuite' &&
+    (p.sessions ?? []).length > 0 &&
+    Number(p.prixFacture) > 0
+  );
+  if (!projetsOk.length) return null;
+  const totalMin  = projetsOk.reduce((s, p) =>
+    s + (p.sessions ?? []).reduce((a, x) => a + (Number(x.duree) || 0), 0), 0);
+  const totalPrix = projetsOk.reduce((s, p) => s + Number(p.prixFacture), 0);
+  return totalMin > 0 ? Math.round(totalPrix / (totalMin / 60)) : null;
 }
 
 // ─── Groupement par client ────────────────────────────────
@@ -404,7 +562,8 @@ function _renderProjetCard(p) {
   const prix = p.prixFacture ? _fmtCHF(p.prixFacture) : '—';
 
   return `
-    <div class="projet-card" data-projet-id="${p.id}" role="button" tabindex="0">
+    <div class="projet-card" data-projet-id="${p.id}" role="button" tabindex="0"
+      style="${p.statut === 'sanssuite' ? 'opacity:0.45;' : ''}">
       <div class="projet-card-header">
         <span class="projet-name">${_esc(p.nom)}</span>
         <span class="statut-pill"
@@ -434,12 +593,20 @@ function _autoStatut(idx) {
   if (!p) return;
   if (p.statut === 'termine' || p.statut === 'sanssuite') return;
   const hasSessions = (p.sessions ?? []).length > 0;
-  const hasData     = _totalQuotaH(p) > 0 || p.prixFacture;
-  const newStatut   = hasSessions ? 'encours' : hasData ? 'attente' : 'brouillon';
+  // offre auto-complétée : prix + quotas renseignés
+  const hasOffre    = (Number(p.prixFacture) > 0) && (_totalQuotaH(p) > 0);
+  const newStatut   = hasSessions ? 'encours'
+    : hasOffre    ? 'attente'
+    : 'brouillon';
   if (state.projets[idx].statut !== newStatut) {
     state.projets[idx].statut = newStatut;
     save.projets();
   }
+}
+
+// Alias : sheet d'édition depuis le menu ··· ou depuis Préparer
+function _openEditProjetSheet(projet) {
+  _openNewProjectSheet(projet);
 }
 
 // ─── Bottom sheet — nouveau projet ───────────────────────
@@ -532,6 +699,156 @@ function _openNewProjectSheet(editProjet = null) {
   setTimeout(() => $('nfNom')?.focus(), 340);
 }
 
+// ────────────────────────────────────────────────────────
+// FAB global — bouton flottant création rapide
+// ────────────────────────────────────────────────────────
+
+function _injectFAB() {
+  if ($('fabGlobal')) return; // déjà injecté
+  const fab = document.createElement('button');
+  fab.id        = 'fabGlobal';
+  fab.className = 'fab-global';
+  fab.type      = 'button';
+  fab.setAttribute('aria-label', 'Créer un projet');
+  fab.innerHTML = `<svg viewBox="0 0 24 24" width="24" height="24" fill="none"
+    stroke="currentColor" stroke-width="2.5"
+    stroke-linecap="round" aria-hidden="true">
+    <path d="M12 5v14M5 12h14"/>
+  </svg>`;
+  fab.addEventListener('click', _openFABSheet);
+  document.body.appendChild(fab);
+}
+
+function _openFABSheet() {
+  if (document.querySelector('.bottom-sheet')) return;
+
+  const types = [
+    ['corporate', 'Corporate'], ['portrait', 'Portrait'],
+    ['mariage',   'Mariage'],   ['event',    'Événement'],
+    ['commercial','Commercial'],['autre',    'Autre'],
+  ];
+
+  const overlay = document.createElement('div');
+  overlay.className = 'sheet-overlay';
+  overlay.id        = 'sheetOverlay';
+  overlay.addEventListener('click', _closeSheet);
+
+  const sheet = document.createElement('div');
+  sheet.className = 'bottom-sheet';
+  sheet.id        = 'newProjectSheet';
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h2 class="sheet-title">Nouveau projet</h2>
+      <button class="icon-button" id="closeSheet" type="button" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <form class="sheet-form" id="fabProjectForm" novalidate>
+      <label for="fpNom">
+        Nom du projet
+        <input id="fpNom" name="nom" type="text"
+          placeholder="ex. Shooting corporate ACME"
+          autocomplete="off" required />
+      </label>
+      <label for="fpClient">
+        Client
+        <input id="fpClient" name="clientNom" type="text"
+          placeholder="Nom du client ou de l'entreprise"
+          autocomplete="off" />
+      </label>
+      <div class="form-row">
+        <label for="fpType">
+          Type
+          <select id="fpType" name="type">
+            ${types.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+          </select>
+        </label>
+        <label for="fpDate">
+          Date prévue
+          <input id="fpDate" name="datePrevue" type="date" />
+        </label>
+      </div>
+      <button class="btn-action sheet-submit" type="submit">
+        Créer le projet →
+      </button>
+    </form>`;
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(sheet);
+
+  $('closeSheet').addEventListener('click', _closeSheet);
+
+  $('fabProjectForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const form    = e.target;
+    const nom     = form.nom.value.trim();
+    if (!nom) { $('fpNom').focus(); return; }
+
+    const clientNom = form.clientNom.value.trim();
+    let clientId    = null;
+    if (clientNom) {
+      let contact = state.contacts.find(c => c.nom.toLowerCase() === clientNom.toLowerCase());
+      if (!contact) {
+        contact = {
+          id:          _genId(),
+          nom:         clientNom,
+          entreprise:  '',
+          canal:       '',
+          dateContact: new Date().toISOString().slice(0, 10),
+          statut:      'client',
+          note:        '',
+          projetId:    null,
+        };
+        state.contacts.push(contact);
+        save.contacts();
+      }
+      clientId = contact.id;
+    }
+
+    const projet = {
+      id:               _genId(),
+      nom,
+      clientId,
+      clientNom,
+      type:             form.type.value,
+      datePrevue:       form.datePrevue.value || null,
+      prixFacture:      null,
+      statut:           'brouillon',
+      quotas:           { admin: 0, prepa: 0, shooting: 0, trajet: 0, edition: 0, revisions: 0 },
+      checklist:        [],
+      sessions:         [],
+      frais:            [],
+      photosCommandees: null,
+      photosLivrees:    null,
+      feuilleRoute:     { contact: '', lieu: '', notes: '', shots: [] },
+      evalClient:       null,
+      scores:           {},
+      dateCreation:     new Date().toISOString(),
+      dateCloture:      null,
+    };
+
+    state.projets.unshift(projet);
+    state.activeProjetId = projet.id;
+    save.projets();
+
+    _closeSheet();
+    setTimeout(() => {
+      state.projetSubView = 'preparer';
+      navigateTo('projet');
+    }, 360);
+  });
+
+  requestAnimationFrame(() => {
+    overlay.classList.add('is-visible');
+    sheet.classList.add('is-open');
+  });
+
+  setTimeout(() => $('fpNom')?.focus(), 340);
+}
+
 function _closeSheet() {
   const overlay = $('sheetOverlay');
   const sheet   = document.querySelector('.bottom-sheet');
@@ -588,7 +905,7 @@ function _submitNewProject(e) {
     _closeSheet();
     // Re-render la sous-vue offre avec les nouvelles données
     setTimeout(() => {
-      state.projetSubView = 'offre';
+      state.projetSubView = 'preparer';
       _refreshProjetSubView();
     }, 360);
     return;
@@ -604,18 +921,17 @@ function _submitNewProject(e) {
     datePrevue:    form.datePrevue.value || null,
     prixFacture:   Number(form.prixFacture.value) || null,
     statut:        'brouillon',
-    quotas:           { admin: 0, prepa: 0, shooting: 0, trajet: 0, edition: 0 },
+    quotas:           { admin: 0, prepa: 0, shooting: 0, trajet: 0, edition: 0, revisions: 0 },
     checklist:        [],
     sessions:         [],
     frais:            [],
     photosCommandees: null,
     photosLivrees:    null,
-    evalClient:    null,
-    revisions:     0,
-    scores:        {},
-    notesLibres:   '',
-    dateCreation:  new Date().toISOString(),
-    dateCloture:   null,
+    feuilleRoute:     { contact: '', lieu: '', notes: '', shots: [] },
+    evalClient:       null,
+    scores:           {},
+    dateCreation:     new Date().toISOString(),
+    dateCloture:      null,
   };
 
   state.projets.unshift(projet);
@@ -656,7 +972,7 @@ function _viewProjet() {
   }
 
   const projet   = state.projets.find(p => p.id === state.activeProjetId);
-  const subViews = ['offre', 'temps', 'frais', 'bilan'];
+  const subViews = ['preparer', 'temps', 'frais', 'bilan'];
 
   return `
     <div class="projet-module">
@@ -676,7 +992,7 @@ function _viewProjet() {
         ${subViews.map(v => `
           <button class="projet-subtab${state.projetSubView === v ? ' is-active' : ''}"
             data-subview="${v}" type="button">
-            ${v[0].toUpperCase() + v.slice(1)}
+            ${{ preparer:'Préparer', temps:'Temps', frais:'Frais', bilan:'Bilan' }[v] ?? v}
           </button>`).join('')}
       </div>
 
@@ -749,7 +1065,7 @@ function _refreshProjetSubView() {
 
 function _renderProjetSubView(sv, projet) {
   switch (sv) {
-    case 'offre':  return _subviewOffre(projet);
+    case 'preparer': return _subviewPreparer(projet);
     case 'temps':  return _subviewTemps(projet);
     case 'frais':  return _subviewFrais(projet);
     case 'bilan':  return _subviewBilan(projet);
@@ -758,7 +1074,7 @@ function _renderProjetSubView(sv, projet) {
 }
 
 function _wireProjetSubView(sv, projet) {
-  if (sv === 'offre')  _wireOffre(projet);
+  if (sv === 'preparer') _wirePreparer(projet);
   if (sv === 'temps')  _wireTemps(projet);
   if (sv === 'frais')  _wireFrais(projet);
   if (sv === 'bilan')  _wireBilan(projet);
@@ -776,54 +1092,125 @@ function _wireBilan(projet) {
   });
 
   $('btnCloturerProjet')?.addEventListener('click', () => {
-    if (!confirm('Marquer ce projet comme terminé ?')) return;
+    if (!confirm('Clôturer ce projet définitivement ?')) return;
 
     const idx = state.projets.findIndex(p => p.id === projet.id);
     if (idx !== -1) {
       state.projets[idx].statut      = 'termine';
       state.projets[idx].dateCloture = new Date().toISOString();
       save.projets();
+      _showClotureOverlay(state.projets[idx]);
     }
-
-    const btn = $('btnCloturerProjet');
-    if (btn) {
-      btn.textContent          = 'Projet clôturé ✓';
-      btn.style.background     = 'linear-gradient(135deg,#3A9E68,#2E7D52)';
-      btn.style.boxShadow      = '0 4px 16px rgba(46,125,82,.35)';
-      btn.disabled             = true;
-    }
-
-    setTimeout(() => navigateTo('studio'), 1500);
   });
 }
 
+function _showClotureOverlay(projet) {
+  // Calcul perf
+  const prixFacture = Number(projet.prixFacture) || 0;
+  const totalMin    = (projet.sessions ?? []).reduce((s, x) => s + (Number(x.duree) || 0), 0);
+  const tauxReel    = totalMin > 0 && prixFacture > 0
+    ? Math.round(prixFacture / (totalMin / 60)) : null;
+
+  let verdictIcon, verdictText, verdictCls;
+  if (tauxReel === null || !hasTaux()) {
+    verdictIcon = '✓'; verdictText = 'Projet clôturé !'; verdictCls = 'is-neutral';
+  } else {
+    const { tauxPlancher, tauxCible } = state.user;
+    if (tauxReel >= tauxCible) {
+      verdictIcon = '🎉'; verdictText = 'Projet rentable !'; verdictCls = 'is-profit';
+    } else if (tauxReel >= tauxPlancher) {
+      verdictIcon = '👍'; verdictText = 'Marge correcte'; verdictCls = 'is-warn';
+    } else {
+      verdictIcon = '📉'; verdictText = 'Sous le plancher'; verdictCls = 'is-loss';
+    }
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'cloture-overlay';
+  overlay.innerHTML = `
+    <div class="cloture-card">
+      <div class="cloture-check">${verdictIcon}</div>
+      <p class="cloture-titre">${_esc(projet.nom)}</p>
+      ${tauxReel !== null
+        ? `<p class="cloture-taux">${tauxReel} CHF/h réel</p>`
+        : ''}
+      <p class="cloture-verdict ${verdictCls}">${verdictText}</p>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  // fadeOut puis navigateTo studio
+  setTimeout(() => {
+    overlay.style.transition = 'opacity .5s ease';
+    overlay.style.opacity    = '0';
+  }, 2000);
+  setTimeout(() => {
+    overlay.remove();
+    navigateTo('studio');
+  }, 2500);
+}
+
 // ════════════════════════════════════════════════════════
-// SOUS-VUE OFFRE — Phase 5
+// SOUS-VUE PRÉPARER — restructuration Phase 3
 // ════════════════════════════════════════════════════════
 
-function _subviewOffre(projet) {
+function _subviewPreparer(projet) {
+  const totalH  = _totalQuotaH(projet);
+  const prixF   = Number(projet.prixFacture) || 0;
+  const fr      = projet.feuilleRoute ?? { contact:'', lieu:'', notes:'', shots:[] };
 
-  const totalH      = _totalQuotaH(projet);
-  const prixF       = Number(projet.prixFacture) || 0;
+  // ── Taux implicite ──────────────────────────────────
   let tauxVal, tauxLabel, tauxCls;
-
   if (prixF <= 0) {
     tauxVal = '—'; tauxLabel = 'taux implicite'; tauxCls = '';
   } else if (totalH <= 0) {
-    tauxVal  = `CHF ${Math.round(prixF / 8)}/h`;
-    tauxLabel = 'Base 1 j · affine tes quotas';
-    tauxCls  = '';
+    tauxVal   = `CHF ${Math.round(prixF / 8)}/h`;
+    tauxLabel = 'Base 1 j · affine tes quotas'; tauxCls = '';
   } else {
-    const t  = Math.round(prixF / totalH);
-    tauxVal  = `CHF ${t}/h`;
-    tauxLabel = 'taux implicite';
-    tauxCls  = _tauxImplClass(t);
+    const t   = Math.round(prixF / totalH);
+    tauxVal   = `CHF ${t}/h`; tauxLabel = 'taux implicite'; tauxCls = _tauxImplClass(t);
   }
 
   const date = projet.datePrevue
     ? new Date(projet.datePrevue).toLocaleDateString('fr-CH',
-        { day: 'numeric', month: 'short', year: 'numeric' })
+        { day:'numeric', month:'short', year:'numeric' })
     : '';
+
+  // ── Prix conseillé ──────────────────────────────────
+  const projSimilaires = state.projets.filter(p =>
+    p.id !== projet.id && p.type === projet.type &&
+    p.statut === 'termine' && Number(p.prixFacture) > 0
+  );
+  let prixSuggestionHtml = '';
+  if (projSimilaires.length >= 2) {
+    const moy  = Math.round(projSimilaires.reduce((s,p)=>s+Number(p.prixFacture),0) / projSimilaires.length);
+    const low  = Math.round(moy * 0.9 / 50) * 50;
+    const high = Math.round(moy * 1.1 / 50) * 50;
+    const tauxMoySim = (() => {
+      const ts = projSimilaires.filter(p => (p.sessions??[]).length > 0);
+      if (!ts.length) return null;
+      const totMin = ts.reduce((s,p)=>(p.sessions??[]).reduce((a,x)=>a+(Number(x.duree)||0),s),0);
+      const totPrix = ts.reduce((s,p)=>s+Number(p.prixFacture),0);
+      return totMin > 0 ? Math.round(totPrix / (totMin/60)) : null;
+    })();
+    prixSuggestionHtml = `
+      <div class="prix-suggestion" id="prixSuggestion">
+        <p class="suggestion-label">💡 Suggestion basée sur tes projets passés</p>
+        <p class="suggestion-val">${_fmtCHF(low)} – ${_fmtCHF(high)}</p>
+        <p class="suggestion-detail">${projSimilaires.length} projet${projSimilaires.length>1?'s':''} ${TYPE_LABELS[projet.type]??projet.type} similaire${projSimilaires.length>1?'s':''}${tauxMoySim ? ` · CHF ${tauxMoySim}/h en moyenne` : ''}</p>
+        <button class="btn-suggestion-apply" id="btnApplySuggestion"
+          data-prix="${moy}" type="button">
+          Utiliser ${_fmtCHF(moy)}
+        </button>
+      </div>`;
+  } else if (totalH > 0 && hasTaux()) {
+    const auto = Math.round(totalH * state.user.tauxCible);
+    prixSuggestionHtml = `
+      <div class="prix-calcul" id="prixCalcul">
+        <p class="calcul-label">Basé sur tes quotas × taux cible CHF ${state.user.tauxCible}/h</p>
+        <p class="calcul-val" id="prixCalcAuto">${_fmtCHF(auto)}</p>
+      </div>`;
+  }
 
   const cats = [
     ['admin',    'Admin'],
@@ -831,12 +1218,22 @@ function _subviewOffre(projet) {
     ['shooting', 'Shooting'],
     ['trajet',   'Trajet'],
     ['edition',  'Édition'],
+    ['revisions','Révisions'],
   ];
+
+  const shotsHtml = (fr.shots ?? []).map(s => `
+    <div class="shot-row" data-shot-id="${s.id}">
+      <input type="checkbox" class="shot-check" data-shot-id="${s.id}"
+        ${s.done ? 'checked' : ''} />
+      <span class="shot-label${s.done ? ' is-done' : ''}">${_esc(s.label)}</span>
+      <button class="shot-delete" data-shot-id="${s.id}" type="button"
+        aria-label="Supprimer">×</button>
+    </div>`).join('');
 
   return `
     <div class="offre-view">
 
-      <!-- Infos + taux implicite -->
+      <!-- ── 1. Infos projet ── -->
       <div class="offre-section glass-card">
         <div class="offre-infos-header">
           <div class="offre-infos-text">
@@ -845,18 +1242,14 @@ function _subviewOffre(projet) {
               TYPE_LABELS[projet.type],
               projet.clientNom ? _esc(projet.clientNom) : '',
               date,
-              projet.prixFacture ? _fmtCHF(projet.prixFacture) : '',
             ].filter(Boolean).join(' · ')}</p>
             <button class="btn-link-edit" id="btnEditProjet" type="button">Modifier</button>
-          <div class="photos-cmd-row">
-            <label class="photos-cmd-label" for="photosCommandeesInput">
-              Photos commandées
-            </label>
-            <input id="photosCommandeesInput" class="photos-cmd-input"
-              type="number" min="0" step="1" inputmode="numeric"
-              placeholder="—"
-              value="${projet.photosCommandees ?? ''}" />
-          </div>
+            <div class="photos-cmd-row">
+              <label class="photos-cmd-label" for="photosCommandeesInput">Photos commandées</label>
+              <input id="photosCommandeesInput" class="photos-cmd-input"
+                type="number" min="0" step="1" inputmode="numeric"
+                placeholder="—" value="${projet.photosCommandees ?? ''}" />
+            </div>
           </div>
           <div class="taux-impl ${tauxCls}" id="tauxImplCard">
             <p class="taux-impl-val" id="tauxImplVal">${tauxVal}</p>
@@ -865,16 +1258,28 @@ function _subviewOffre(projet) {
         </div>
       </div>
 
-      <!-- Quotas -->
+      <!-- ── 2. Prix de l'offre ── -->
+      <div class="prix-conseil-card glass-card">
+        <p class="offre-section-title">Prix de l'offre</p>
+        ${prixSuggestionHtml}
+        <label for="prixInput">
+          Prix final CHF
+          <input id="prixInput" type="number" min="0" step="50"
+            inputmode="decimal" placeholder="0"
+            value="${projet.prixFacture ?? ''}" />
+        </label>
+      </div>
+
+      <!-- ── 3. Quotas ── -->
       <div class="offre-section glass-card">
         <p class="offre-section-title">Temps estimé</p>
         ${cats.map(([key, label]) => `
           <div class="quota-cat-row">
-            <span class="quota-cat-dot" style="background:${CAT_COLORS[key]}"></span>
+            <span class="quota-cat-dot" style="background:${CATEGORIES[key]?.color ?? '#aaa'}"></span>
             <span class="quota-cat-label">${label}</span>
             <input class="quota-input" type="number"
               data-cat="${key}" min="0" step="0.5"
-              value="${projet.quotas[key] ?? 0}" />
+              value="${projet.quotas?.[key] ?? 0}" />
             <select class="quota-unit" data-cat="${key}">
               <option value="h">h</option>
               <option value="min">min</option>
@@ -887,46 +1292,161 @@ function _subviewOffre(projet) {
         </div>
       </div>
 
-      <!-- Checklist matériel -->
+      <!-- ── 4. Feuille de route ── -->
+      <div class="feuille-route glass-card offre-section">
+        <p class="offre-section-title">Feuille de route</p>
+        <label for="frContact">
+          Contact client
+          <input id="frContact" type="text"
+            placeholder="Nom · +41 79 000 00 00"
+            autocomplete="off"
+            value="${_esc(fr.contact ?? '')}" />
+        </label>
+        <label for="frLieu">
+          Lieu
+          <input id="frLieu" type="text"
+            placeholder="Adresse ou lieu"
+            autocomplete="off"
+            value="${_esc(fr.lieu ?? '')}" />
+        </label>
+        <label for="frNotes">
+          Notes
+          <textarea id="frNotes" rows="3"
+            placeholder="Ambiance, style, contraintes…"
+            style="resize:vertical;">${_esc(fr.notes ?? '')}</textarea>
+        </label>
+        <p class="shots-label">Plan de shooting</p>
+        <div id="shotsList">${shotsHtml}</div>
+        <div class="shot-add-row">
+          <input id="shotInput" type="text"
+            placeholder="Ex: Portrait CEO · 3 variantes"
+            autocomplete="off" autocapitalize="sentences" />
+          <button class="btn-shot-add" id="btnAddShot" type="button" aria-label="Ajouter">+</button>
+        </div>
+      </div>
+
+      <!-- ── 5. Checklist matériel ── -->
       <div class="offre-section glass-card">
         <p class="offre-section-title">Matériel</p>
         ${_renderChecklistSection(projet)}
       </div>
 
-      <!-- CTA -->
-      <button class="btn-action" id="btnStartChrono" type="button">
-        Démarrer le chrono →
-      </button>
+      <!-- ── 6. Actions offre ── -->
+      ${(projet.statut !== 'encours' && projet.statut !== 'termine' && projet.statut !== 'sanssuite')
+        ? `<button class="btn-action" id="btnEnvoyerOffre" type="button">
+            Offre envoyée →
+          </button>
+          <button class="btn-text-muted" id="btnSansSuiteOffre" type="button">
+            Marquer sans suite
+          </button>`
+        : `<button class="btn-action" id="btnStartChrono" type="button">
+            Démarrer le chrono →
+          </button>`}
 
     </div>`;
 }
 
-function _wireOffre(projet) {
-  // Quotas — mise à jour temps réel + auto-save
+function _wirePreparer(projet) {
+  const CATS_ALL = ['admin','prepa','shooting','trajet','edition','revisions'];
+
+  // Quotas
   document.querySelectorAll('.quota-input, .quota-unit').forEach(el =>
-    el.addEventListener('input', () => _onQuotaChange(projet))
+    el.addEventListener('input', () => _onQuotaChange(projet, CATS_ALL))
   );
 
-  // Checklist — toggle avec upsert (items profil pas encore dans proj.checklist)
-  _wireChecklistSection(projet);
-
-  // Lien "aller au Profil" si matériel vide
-  $('btnGoToProfil')?.addEventListener('click', () => navigateTo('profil'));
-
-  // Modifier le projet → ouvre le sheet en mode édition
-  $('btnEditProjet')?.addEventListener('click', () => {
-    _editingProjetId = projet.id;
-    _openNewProjectSheet(projet);
+  // Prix input — auto-save
+  $('prixInput')?.addEventListener('input', e => {
+    const val = Number(e.target.value) || null;
+    const idx = state.projets.findIndex(p => p.id === projet.id);
+    if (idx !== -1) {
+      state.projets[idx].prixFacture = val;
+      save.projets();
+      _autoStatut(idx);
+      // Met à jour taux implicite
+      _onQuotaChange(state.projets[idx], CATS_ALL);
+    }
   });
 
-  // Photos commandées — auto-save
+  // Suggestion — appliquer prix
+  $('btnApplySuggestion')?.addEventListener('click', e => {
+    const prix = Number(e.currentTarget.dataset.prix);
+    const prixEl = $('prixInput');
+    if (prixEl) prixEl.value = prix;
+    const idx = state.projets.findIndex(p => p.id === projet.id);
+    if (idx !== -1) {
+      state.projets[idx].prixFacture = prix;
+      save.projets();
+      _autoStatut(idx);
+      _onQuotaChange(state.projets[idx], CATS_ALL);
+    }
+  });
+
+  // Photos commandées
   $('photosCommandeesInput')?.addEventListener('input', e => {
     const val = Number(e.target.value) || null;
     const idx = state.projets.findIndex(p => p.id === projet.id);
     if (idx !== -1) { state.projets[idx].photosCommandees = val; save.projets(); }
   });
 
-  // Démarrer le chrono → sous-onglet Temps
+  // Modifier le projet
+  $('btnEditProjet')?.addEventListener('click', () => {
+    _editingProjetId = projet.id;
+    _openEditProjetSheet(projet);
+  });
+
+  // Checklist matériel
+  _wireChecklistSection(projet);
+  $('btnGoToProfil')?.addEventListener('click', () => navigateTo('profil'));
+
+  // Feuille de route — auto-save
+  const _saveFR = () => {
+    const idx = state.projets.findIndex(p => p.id === projet.id);
+    if (idx === -1) return;
+    if (!state.projets[idx].feuilleRoute)
+      state.projets[idx].feuilleRoute = { contact:'', lieu:'', notes:'', shots:[] };
+    state.projets[idx].feuilleRoute.contact = $('frContact')?.value ?? '';
+    state.projets[idx].feuilleRoute.lieu    = $('frLieu')?.value    ?? '';
+    state.projets[idx].feuilleRoute.notes   = $('frNotes')?.value   ?? '';
+    save.projets();
+  };
+  ['frContact','frLieu','frNotes'].forEach(id => $(id)?.addEventListener('input', _saveFR));
+
+  // Shots — ajouter
+  const doAddShot = () => {
+    const input = $('shotInput');
+    const label = input?.value.trim();
+    if (!label) { input?.focus(); return; }
+    const idx = state.projets.findIndex(p => p.id === projet.id);
+    if (idx !== -1) {
+      if (!state.projets[idx].feuilleRoute)
+        state.projets[idx].feuilleRoute = { contact:'', lieu:'', notes:'', shots:[] };
+      state.projets[idx].feuilleRoute.shots.push({ id: _genId(), label, done: false });
+      save.projets();
+      _refreshShotsList(state.projets[idx]);
+    }
+    if (input) input.value = '';
+    input?.focus();
+  };
+  $('btnAddShot')?.addEventListener('click', doAddShot);
+  $('shotInput')?.addEventListener('keydown', e => { if (e.key==='Enter'){e.preventDefault();doAddShot();}});
+
+  // Shots — check/uncheck + supprimer
+  _wireShotsListeners(projet);
+
+  // Actions
+  $('btnEnvoyerOffre')?.addEventListener('click', () => {
+    const idx = state.projets.findIndex(p => p.id === projet.id);
+    if (idx !== -1) { state.projets[idx].statut = 'attente'; save.projets(); }
+    const btn = $('btnEnvoyerOffre');
+    if (btn) { btn.textContent='Offre envoyée ✓'; btn.disabled=true; btn.style.opacity='.7'; }
+    setTimeout(() => navigateTo('studio'), 1200);
+  });
+  $('btnSansSuiteOffre')?.addEventListener('click', () => {
+    if (!confirm(`Marquer "${projet.nom}" sans suite ?`)) return;
+    const idx = state.projets.findIndex(p => p.id === projet.id);
+    if (idx !== -1) { state.projets[idx].statut = 'sanssuite'; save.projets(); }
+    navigateTo('studio');
+  });
   $('btnStartChrono')?.addEventListener('click', () => {
     state.projetSubView = 'temps';
     document.querySelectorAll('[data-subview]').forEach(b =>
@@ -936,8 +1456,48 @@ function _wireOffre(projet) {
   });
 }
 
-function _onQuotaChange(projet) {
-  const cats = ['admin', 'prepa', 'shooting', 'trajet', 'edition'];
+function _wireShotsListeners(projet) {
+  document.querySelectorAll('.shot-check').forEach(cb =>
+    cb.addEventListener('change', e => {
+      const id   = e.target.dataset.shotId;
+      const done = e.target.checked;
+      const idx  = state.projets.findIndex(p => p.id === projet.id);
+      if (idx !== -1 && state.projets[idx].feuilleRoute?.shots) {
+        const si = state.projets[idx].feuilleRoute.shots.findIndex(s => s.id === id);
+        if (si !== -1) { state.projets[idx].feuilleRoute.shots[si].done = done; save.projets(); }
+      }
+      const labelEl = e.target.closest('.shot-row')?.querySelector('.shot-label');
+      labelEl?.classList.toggle('is-done', done);
+    })
+  );
+  document.querySelectorAll('.shot-delete').forEach(btn =>
+    btn.addEventListener('click', e => {
+      const id  = e.currentTarget.dataset.shotId;
+      const idx = state.projets.findIndex(p => p.id === projet.id);
+      if (idx !== -1 && state.projets[idx].feuilleRoute?.shots) {
+        state.projets[idx].feuilleRoute.shots =
+          state.projets[idx].feuilleRoute.shots.filter(s => s.id !== id);
+        save.projets();
+        _refreshShotsList(state.projets[idx]);
+      }
+    })
+  );
+}
+
+function _refreshShotsList(projet) {
+  const el = $('shotsList');
+  if (!el) return;
+  const fr = projet.feuilleRoute ?? { shots:[] };
+  el.innerHTML = (fr.shots ?? []).map(s => `
+    <div class="shot-row" data-shot-id="${s.id}">
+      <input type="checkbox" class="shot-check" data-shot-id="${s.id}" ${s.done?'checked':''} />
+      <span class="shot-label${s.done?' is-done':''}">${_esc(s.label)}</span>
+      <button class="shot-delete" data-shot-id="${s.id}" type="button" aria-label="Supprimer">×</button>
+    </div>`).join('');
+  _wireShotsListeners(projet);
+}
+
+function _onQuotaChange(projet, cats = ['admin', 'prepa', 'shooting', 'trajet', 'edition', 'revisions']) {
   const quotas = {};
   cats.forEach(cat => {
     const val  = Number(document.querySelector(`.quota-input[data-cat="${cat}"]`)?.value) || 0;
@@ -1344,7 +1904,7 @@ function _renderQuotaBars(projet) {
     });
 
   if (rows.length === 0) {
-    return `<p class="quota-bars-empty">Définis tes quotas dans l'onglet Offre.</p>`;
+    return `<p class="quota-bars-empty">Définis tes quotas dans l'onglet Préparer.</p>`;
   }
   return rows.join('');
 }
