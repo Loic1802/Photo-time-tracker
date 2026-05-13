@@ -49,11 +49,14 @@ const CATEGORIES = {
 // ════════════════════════════════════════════════════════
 
 const STATUTS = {
-  brouillon: { label: 'Brouillon',     color: 'rgba(30,50,70,0.35)', bg: 'rgba(30,50,70,0.07)'    },
-  attente:   { label: 'Offre envoyée', color: '#B8600A',             bg: 'rgba(213,112,10,0.12)'  },
-  encours:   { label: 'En cours',      color: '#3A7ABF',             bg: 'rgba(58,122,191,0.12)'  },
-  termine:   { label: 'Terminé',       color: '#2E7D52',             bg: 'rgba(46,125,82,0.13)'   },
+  brouillon: { label: 'Brouillon',     color: 'rgba(30,50,70,0.35)', bg: 'rgba(30,50,70,0.07)'   },
+  avenir:    { label: 'À venir',       color: '#3A7ABF',             bg: 'rgba(58,122,191,0.12)' },
+  encours:   { label: 'En cours',      color: '#2E7D52',             bg: 'rgba(46,125,82,0.12)'  },
+  atraiter:  { label: 'À traiter',     color: '#B8600A',             bg: 'rgba(213,112,10,0.13)' },
+  termine:   { label: 'Terminé',       color: '#2E7D52',             bg: 'rgba(46,125,82,0.13)'  },
   sanssuite: { label: 'Sans suite',    color: 'rgba(30,50,70,0.25)', bg: 'rgba(30,50,70,0.05)'   },
+  // conservé pour données existantes ayant 'attente'
+  attente:   { label: 'Offre envoyée', color: '#B8600A',             bg: 'rgba(213,112,10,0.12)' },
 };
 
 // ════════════════════════════════════════════════════════
@@ -130,7 +133,37 @@ const TABS = [
   { id: 'profil',      label: 'Moi',      icon: _ico_user()    },
 ];
 
+// ════════════════════════════════════════════════════════
+// MIGRATION — montée de version des données localStorage
+// ════════════════════════════════════════════════════════
+
+function _migrateProjects() {
+  let changed = false;
+  state.projets.forEach((p, i) => {
+    // v1→v2 : datePrevue → dateShooting
+    if (p.dateShooting === undefined) {
+      state.projets[i].dateShooting = p.dateShooting ?? null;
+      changed = true;
+    }
+    // v1→v2 : feuilleRoute absent
+    if (!state.projets[i].feuilleRoute) {
+      state.projets[i].feuilleRoute = { contact: '', lieu: '', notes: '', shots: [] };
+      changed = true;
+    }
+    // v1→v2 : revisions absent dans quotas
+    if (state.projets[i].quotas && state.projets[i].quotas.revisions === undefined) {
+      state.projets[i].quotas.revisions = 0;
+      changed = true;
+    }
+  });
+  if (changed) save.projets();
+
+  // Re-calculer les statuts auto après migration (sans écraser termine/sanssuite)
+  state.projets.forEach((_, i) => _autoStatut(i));
+}
+
 function showShell(view = 'studio') {
+  _migrateProjects();
   _renderTabBar();
   _injectFAB();
   navigateTo(view);
@@ -192,7 +225,7 @@ function _wireTopbarAction(view) {
   old.parentNode.replaceChild(fresh, old);
 
   if (view === 'studio')      fresh.addEventListener('click', _openNewProjectSheet);
-  // prospection : Phase 4
+  if (view === 'prospection') fresh.addEventListener('click', () => _openContactSheet());
 }
 
 // ════════════════════════════════════════════════════════
@@ -205,7 +238,10 @@ function _renderView(view, el) {
       el.innerHTML = _viewStudio();
       _wireStudio();
       break;
-    case 'prospection': el.innerHTML = _viewProspection(); break;
+    case 'prospection':
+      el.innerHTML = _viewProspection();
+      _wireProspection();
+      break;
     case 'projet':
       el.innerHTML = _viewProjet();
       _wireProjet();
@@ -241,8 +277,8 @@ function _viewStudio() {
   const caMois    = _statsCaMois();
   const tauxMoyen = _statsTauxMoyen();
 
-  // ── Hero card — projet en cours (le plus récent) ──────
-  const enCours = state.projets.find(p => p.statut === 'encours');
+  // ── Hero card — projet urgent (encours = today, ou atraiter = passé non clôturé) ──
+  const enCours = state.projets.find(p => p.statut === 'encours' || p.statut === 'atraiter');
   const heroHtml = enCours ? (() => {
     const tauxAff = (() => {
       const min = (enCours.sessions ?? []).reduce((s, x) => s + (Number(x.duree) || 0), 0);
@@ -253,12 +289,12 @@ function _viewStudio() {
         return Math.round(Number(enCours.prixFacture) / qH) + ' CHF/h (offre)';
       return '';
     })();
-    const date = enCours.datePrevue
-      ? new Date(enCours.datePrevue).toLocaleDateString('fr-CH', { day: 'numeric', month: 'short' })
+    const date = enCours.dateShooting
+      ? new Date(enCours.dateShooting).toLocaleDateString('fr-CH', { day: 'numeric', month: 'short' })
       : '';
     return `
     <div class="studio-hero-card glass-card" data-hero-id="${enCours.id}" role="button" tabindex="0">
-      <p class="hero-eyebrow">En cours</p>
+      <p class="hero-eyebrow" style="color:${enCours.statut === 'atraiter' ? '#B8600A' : 'inherit'}">${enCours.statut === 'atraiter' ? 'À traiter' : 'En cours'}</p>
       <p class="hero-nom">${_esc(enCours.nom)}</p>
       <div class="hero-meta">
         ${enCours.clientNom ? `<span>${_esc(enCours.clientNom)}</span>` : ''}
@@ -271,12 +307,12 @@ function _viewStudio() {
     </div>`;
   })() : '';
 
-  // ── Next card — prochain par date (attente / brouillon) ──
+  // ── Next card — prochain par date de shooting (statut "avenir") ──
   const prochain = state.projets
-    .filter(p => (p.statut === 'attente' || p.statut === 'brouillon') && p.datePrevue)
-    .sort((a, b) => new Date(a.datePrevue) - new Date(b.datePrevue))[0] ?? null;
+    .filter(p => p.statut === 'avenir' && p.dateShooting)
+    .sort((a, b) => new Date(a.dateShooting) - new Date(b.dateShooting))[0] ?? null;
   const nextHtml = prochain ? (() => {
-    const dateStr = new Date(prochain.datePrevue).toLocaleDateString('fr-CH',
+    const dateStr = new Date(prochain.dateShooting).toLocaleDateString('fr-CH',
       { day: 'numeric', month: 'long' });
     const s = STATUTS[prochain.statut] ?? STATUTS.brouillon;
     return `
@@ -307,12 +343,11 @@ function _viewStudio() {
 
   if (!state.projets.length) {
     return statsHtml + `
-      <div class="studio-empty">
-        ${_ico_camera_lg()}
-        <p class="empty-title">Aucun projet pour l'instant</p>
-        <p class="empty-sub">Crée ton premier projet<br>pour commencer à suivre ton activité.</p>
+      <div class="empty-state-view">
+        ${_ico_empty_tripod()}
+        <p class="empty-state-title">Ton premier projet attend.</p>
         <button class="btn-action" id="btnCreateFirst" type="button">
-          Créer mon premier projet
+          Créer un projet
         </button>
       </div>`;
   }
@@ -412,9 +447,9 @@ function _wireStudio() {
       if (!p) return;
       state.activeProjetId = id;
       // Routing intelligent par statut
-      if      (p.statut === 'encours')  state.projetSubView = 'temps';
-      else if (p.statut === 'termine')  state.projetSubView = 'bilan';
-      else                              state.projetSubView = 'preparer';
+      if      (p.statut === 'encours' || p.statut === 'atraiter') state.projetSubView = 'temps';
+      else if (p.statut === 'termine')                           state.projetSubView = 'bilan';
+      else                                                       state.projetSubView = 'preparer';
       navigateTo('projet');
     });
     card.addEventListener('keydown', e => {
@@ -450,9 +485,6 @@ function _openProjetMenu(projetId, triggerEl) {
       <h2 class="sheet-title">${_esc(projet.nom)}</h2>
     </div>
     <div class="menu-sheet-actions">
-      <button class="menu-sheet-item" data-action="ouvrir" type="button">
-        Ouvrir le projet
-      </button>
       <button class="menu-sheet-item" data-action="modifier" type="button">
         Modifier
       </button>
@@ -479,14 +511,7 @@ function _openProjetMenu(projetId, triggerEl) {
       const action = e.currentTarget.dataset.action;
       _closeSheet();
       setTimeout(() => {
-        if (action === 'ouvrir') {
-          state.activeProjetId = projetId;
-          if      (projet.statut === 'encours') state.projetSubView = 'temps';
-          else if (projet.statut === 'termine') state.projetSubView = 'bilan';
-          else                                  state.projetSubView = 'preparer';
-          navigateTo('projet');
-
-        } else if (action === 'modifier') {
+        if (action === 'modifier') {
           _editingProjetId = projetId;
           _openEditProjetSheet(projet);
 
@@ -517,8 +542,8 @@ function _statsCaMois() {
   return state.projets
     .filter(p => {
       if (p.statut === 'sanssuite') return false;
-      if (!p.datePrevue) return false;
-      const d = new Date(p.datePrevue);
+      if (!p.dateShooting) return false;
+      const d = new Date(p.dateShooting);
       return d.getFullYear() === annee && d.getMonth() === mois;
     })
     .reduce((sum, p) => sum + (Number(p.prixFacture) || 0), 0);
@@ -555,8 +580,8 @@ function _groupByClient(projets) {
 
 function _renderProjetCard(p) {
   const s    = STATUTS[p.statut] ?? STATUTS.brouillon;
-  const date = p.datePrevue
-    ? new Date(p.datePrevue).toLocaleDateString('fr-CH', { day: 'numeric', month: 'short' })
+  const date = p.dateShooting
+    ? new Date(p.dateShooting).toLocaleDateString('fr-CH', { day: 'numeric', month: 'short' })
     : '';
   const type = TYPE_LABELS[p.type] ?? p.type ?? '';
   const prix = p.prixFacture ? _fmtCHF(p.prixFacture) : '—';
@@ -585,19 +610,31 @@ function _statutPill(p) {
 }
 
 /**
- * Auto-calcule le statut d'un projet à partir de ses données.
+ * Auto-calcule le statut d'un projet à partir de dateShooting.
  * Ne jamais écraser 'termine' ou 'sanssuite' (statuts finaux manuels).
+ *
+ * Pas de dateShooting          → "brouillon"
+ * dateShooting > aujourd'hui   → "avenir"
+ * dateShooting = aujourd'hui   → "encours"
+ * dateShooting < aujourd'hui   → "atraiter"
  */
 function _autoStatut(idx) {
   const p = state.projets[idx];
   if (!p) return;
   if (p.statut === 'termine' || p.statut === 'sanssuite') return;
-  const hasSessions = (p.sessions ?? []).length > 0;
-  // offre auto-complétée : prix + quotas renseignés
-  const hasOffre    = (Number(p.prixFacture) > 0) && (_totalQuotaH(p) > 0);
-  const newStatut   = hasSessions ? 'encours'
-    : hasOffre    ? 'attente'
-    : 'brouillon';
+
+  const ds = p.dateShooting ?? null;
+  let newStatut;
+  if (!ds) {
+    newStatut = 'brouillon';
+  } else {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const shoot = new Date(ds); shoot.setHours(0, 0, 0, 0);
+    if (+shoot > +today)        newStatut = 'avenir';
+    else if (+shoot === +today) newStatut = 'encours';
+    else                        newStatut = 'atraiter';
+  }
+
   if (state.projets[idx].statut !== newStatut) {
     state.projets[idx].statut = newStatut;
     save.projets();
@@ -666,8 +703,8 @@ function _openNewProjectSheet(editProjet = null) {
         </label>
         <label for="nfDate">
           Date prévue
-          <input id="nfDate" name="datePrevue" type="date"
-            value="${isEdit && editProjet.datePrevue ? editProjet.datePrevue : ''}" />
+          <input id="nfDate" name="dateShooting" type="date"
+            value="${isEdit && editProjet.dateShooting ? editProjet.dateShooting : ''}" />
         </label>
       </div>
       <label for="nfPrix">
@@ -688,7 +725,9 @@ function _openNewProjectSheet(editProjet = null) {
     _editingProjetId = null;
     _closeSheet();
   });
-  $('newProjectForm').addEventListener('submit', _submitNewProject);
+  // _selectedClientIdNF : contact sélectionné via dropdown dans ce sheet
+  let _selectedClientIdNF = null;
+  $('newProjectForm').addEventListener('submit', e => _submitNewProject(e, _selectedClientIdNF));
 
   // Animate in
   requestAnimationFrame(() => {
@@ -696,7 +735,73 @@ function _openNewProjectSheet(editProjet = null) {
     sheet.classList.add('is-open');
   });
 
-  setTimeout(() => $('nfNom')?.focus(), 340);
+  setTimeout(() => {
+    $('nfNom')?.focus();
+    _wireClientAutocomplete('nfClient', 'nfClientDrop', contact => {
+      _selectedClientIdNF = contact.id;
+    });
+  }, 340);
+}
+
+// ────────────────────────────────────────────────────────
+// AUTOCOMPLÉTION CLIENT — partagée par les deux sheets
+// ────────────────────────────────────────────────────────
+
+function _normalizeStr(s) {
+  return String(s ?? '').toLowerCase().trim()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+/**
+ * Wire l'autocomplétion sur un <input> client.
+ * @param {string} inputId  — id du champ texte
+ * @param {string} dropId   — id du conteneur dropdown (créé dynamiquement)
+ * @param {Function} onSelect — callback(contact) quand un item est sélectionné
+ */
+function _wireClientAutocomplete(inputId, dropId, onSelect) {
+  const input = $(inputId);
+  if (!input) return;
+
+  // Créer le dropdown juste après l'input
+  let drop = document.createElement('div');
+  drop.className = 'client-dropdown';
+  drop.id = dropId;
+  input.parentNode.insertBefore(drop, input.nextSibling);
+
+  const closeDrop = () => { drop.innerHTML = ''; drop.hidden = true; };
+  closeDrop();
+
+  input.addEventListener('input', () => {
+    const q = _normalizeStr(input.value);
+    if (q.length < 2) { closeDrop(); return; }
+
+    const matches = state.contacts
+      .filter(c => _normalizeStr(c.nom).includes(q) || _normalizeStr(c.entreprise).includes(q))
+      .slice(0, 6);
+
+    if (!matches.length) { closeDrop(); return; }
+
+    drop.hidden = false;
+    drop.innerHTML = matches.map(c => `
+      <button class="client-dropdown-item" type="button" data-contact-id="${c.id}">
+        <span class="dropdown-nom">${_esc(c.nom)}</span>
+        ${c.entreprise ? `<span class="dropdown-ent">${_esc(c.entreprise)}</span>` : ''}
+      </button>`).join('');
+
+    drop.querySelectorAll('.client-dropdown-item').forEach(btn =>
+      btn.addEventListener('mousedown', e => {
+        e.preventDefault(); // évite blur avant click
+        const contact = state.contacts.find(c => c.id === btn.dataset.contactId);
+        if (contact) {
+          input.value = contact.nom;
+          onSelect(contact);
+        }
+        closeDrop();
+      })
+    );
+  });
+
+  input.addEventListener('blur', () => setTimeout(closeDrop, 150));
 }
 
 // ────────────────────────────────────────────────────────
@@ -721,6 +826,7 @@ function _injectFAB() {
 
 function _openFABSheet() {
   if (document.querySelector('.bottom-sheet')) return;
+  let _selectedClientId = null; // renseigné par l'autocomplete
 
   const types = [
     ['corporate', 'Corporate'], ['portrait', 'Portrait'],
@@ -768,7 +874,7 @@ function _openFABSheet() {
         </label>
         <label for="fpDate">
           Date prévue
-          <input id="fpDate" name="datePrevue" type="date" />
+          <input id="fpDate" name="dateShooting" type="date" />
         </label>
       </div>
       <button class="btn-action sheet-submit" type="submit">
@@ -788,9 +894,9 @@ function _openFABSheet() {
     if (!nom) { $('fpNom').focus(); return; }
 
     const clientNom = form.clientNom.value.trim();
-    let clientId    = null;
-    if (clientNom) {
-      let contact = state.contacts.find(c => c.nom.toLowerCase() === clientNom.toLowerCase());
+    let clientId    = _selectedClientId; // priorité au contact sélectionné dans dropdown
+    if (clientNom && !clientId) {
+      let contact = state.contacts.find(c => _normalizeStr(c.nom) === _normalizeStr(clientNom));
       if (!contact) {
         contact = {
           id:          _genId(),
@@ -814,7 +920,7 @@ function _openFABSheet() {
       clientId,
       clientNom,
       type:             form.type.value,
-      datePrevue:       form.datePrevue.value || null,
+      dateShooting:     form.dateShooting.value || null,
       prixFacture:      null,
       statut:           'brouillon',
       quotas:           { admin: 0, prepa: 0, shooting: 0, trajet: 0, edition: 0, revisions: 0 },
@@ -846,7 +952,12 @@ function _openFABSheet() {
     sheet.classList.add('is-open');
   });
 
-  setTimeout(() => $('fpNom')?.focus(), 340);
+  setTimeout(() => {
+    $('fpNom')?.focus();
+    _wireClientAutocomplete('fpClient', 'fpClientDrop', contact => {
+      _selectedClientId = contact.id;
+    });
+  }, 340);
 }
 
 function _closeSheet() {
@@ -858,7 +969,7 @@ function _closeSheet() {
   setTimeout(() => { overlay?.remove(); sheet.remove(); }, 340);
 }
 
-function _submitNewProject(e) {
+function _submitNewProject(e, preselectedClientId = null) {
   e.preventDefault();
   const form = e.target;
   const nom  = form.nom.value.trim();
@@ -866,11 +977,11 @@ function _submitNewProject(e) {
 
   const clientNom = form.clientNom.value.trim();
 
-  // Trouver ou créer le contact
-  let clientId = null;
-  if (clientNom) {
+  // Priorité : contact sélectionné via autocomplete, sinon matching normalisé, sinon création
+  let clientId = preselectedClientId;
+  if (clientNom && !clientId) {
     let contact = state.contacts.find(
-      c => c.nom.toLowerCase() === clientNom.toLowerCase()
+      c => _normalizeStr(c.nom) === _normalizeStr(clientNom)
     );
     if (!contact) {
       contact = {
@@ -897,7 +1008,7 @@ function _submitNewProject(e) {
       state.projets[idx].clientNom  = clientNom;
       state.projets[idx].clientId   = clientId;
       state.projets[idx].type       = form.type.value;
-      state.projets[idx].datePrevue = form.datePrevue.value || null;
+      state.projets[idx].dateShooting = form.dateShooting.value || null;
       state.projets[idx].prixFacture= Number(form.prixFacture.value) || null;
       save.projets();
     }
@@ -918,7 +1029,7 @@ function _submitNewProject(e) {
     clientId,
     clientNom,
     type:          form.type.value,
-    datePrevue:    form.datePrevue.value || null,
+    dateShooting:  form.dateShooting.value || null,
     prixFacture:   Number(form.prixFacture.value) || null,
     statut:        'brouillon',
     quotas:           { admin: 0, prepa: 0, shooting: 0, trajet: 0, edition: 0, revisions: 0 },
@@ -947,10 +1058,216 @@ function _submitNewProject(e) {
 // ════════════════════════════════════════════════════════
 
 function _viewProspection() {
+  if (!state.contacts.length) {
+    return `
+      <div class="empty-state-view">
+        ${_ico_empty_lens()}
+        <p class="empty-state-title">Commence par ajouter un client.</p>
+        <button class="btn-action" id="btnAddFirstContact" type="button">
+          Ajouter un contact
+        </button>
+      </div>`;
+  }
+
   return `
-    <div class="empty-state" style="margin:32px 16px;min-height:200px;">
-      <p style="font-size:.8rem;color:rgba(30,50,70,.3);">Module Prospection — Phase 4</p>
+    <div class="contacts-view">
+      <div class="contacts-list" id="contactsList">
+        ${state.contacts.map(_renderContactCard).join('')}
+      </div>
     </div>`;
+}
+
+function _renderContactCard(c) {
+  const projets = state.projets.filter(p => p.clientId === c.id || p.clientNom === c.nom);
+  const nbProjets = projets.length;
+
+  return `
+    <div class="contact-card glass-card" data-contact-id="${c.id}">
+      <div class="contact-card-header">
+        <div class="contact-card-main">
+          <p class="contact-nom">${_esc(c.nom)}</p>
+          ${c.entreprise ? `<p class="contact-entreprise">${_esc(c.entreprise)}</p>` : ''}
+        </div>
+        <button class="contact-menu-btn" data-menu-contact-id="${c.id}"
+          type="button" aria-label="Options" tabindex="-1">···</button>
+      </div>
+      <div class="contact-links">
+        ${c.telephone ? `
+          <a href="tel:${_esc(c.telephone)}" class="contact-link contact-link--tel">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.38 2 2 0 0 1 3.59 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.56a16 16 0 0 0 6 6l.92-.93a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+            </svg>
+            ${_esc(c.telephone)}
+          </a>` : ''}
+        ${c.email ? `
+          <a href="mailto:${_esc(c.email)}" class="contact-link contact-link--email">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+              <polyline points="22,6 12,13 2,6"/>
+            </svg>
+            ${_esc(c.email)}
+          </a>` : ''}
+      </div>
+      ${c.note ? `<p class="contact-note">${_esc(c.note)}</p>` : ''}
+      ${nbProjets > 0 ? `
+        <p class="contact-projets-count">${nbProjets} projet${nbProjets > 1 ? 's' : ''}</p>` : ''}
+    </div>`;
+}
+
+function _wireProspection() {
+  $('btnAddFirstContact')?.addEventListener('click', _openContactSheet);
+
+  document.querySelectorAll('.contact-menu-btn').forEach(btn =>
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      _openContactMenu(btn.dataset.menuContactId);
+    })
+  );
+}
+
+function _openContactMenu(contactId) {
+  if (document.querySelector('.bottom-sheet')) return;
+  const contact = state.contacts.find(c => c.id === contactId);
+  if (!contact) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'sheet-overlay';
+  overlay.id = 'sheetOverlay';
+  overlay.addEventListener('click', _closeSheet);
+
+  const sheet = document.createElement('div');
+  sheet.className = 'bottom-sheet projet-menu-sheet';
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h2 class="sheet-title">${_esc(contact.nom)}</h2>
+    </div>
+    <div class="menu-sheet-actions">
+      <button class="menu-sheet-item" data-action="modifier" type="button">Modifier</button>
+      <button class="menu-sheet-item menu-sheet-item--danger" data-action="supprimer" type="button">Supprimer</button>
+    </div>
+    <div style="height:env(safe-area-inset-bottom,16px)"></div>`;
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(sheet);
+  requestAnimationFrame(() => { overlay.classList.add('is-visible'); sheet.classList.add('is-open'); });
+
+  sheet.querySelectorAll('.menu-sheet-item').forEach(btn =>
+    btn.addEventListener('click', e => {
+      const action = e.currentTarget.dataset.action;
+      _closeSheet();
+      setTimeout(() => {
+        if (action === 'modifier') {
+          _openContactSheet(contact);
+        } else if (action === 'supprimer') {
+          if (!confirm(`Supprimer "${contact.nom}" ?`)) return;
+          state.contacts = state.contacts.filter(c => c.id !== contactId);
+          save.contacts();
+          navigateTo('prospection');
+        }
+      }, 360);
+    })
+  );
+}
+
+function _openContactSheet(editContact = null) {
+  if (document.querySelector('.bottom-sheet')) return;
+  const isEdit = editContact !== null;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'sheet-overlay';
+  overlay.id = 'sheetOverlay';
+  overlay.addEventListener('click', _closeSheet);
+
+  const sheet = document.createElement('div');
+  sheet.className = 'bottom-sheet';
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h2 class="sheet-title">${isEdit ? 'Modifier le contact' : 'Nouveau contact'}</h2>
+      <button class="icon-button" id="closeSheet" type="button" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form class="sheet-form" id="contactForm" novalidate>
+      <label for="cfNom">
+        Nom
+        <input id="cfNom" name="nom" type="text"
+          placeholder="Prénom Nom" autocomplete="off" required
+          value="${isEdit ? _esc(editContact.nom) : ''}" />
+      </label>
+      <label for="cfEntreprise">
+        Entreprise
+        <input id="cfEntreprise" name="entreprise" type="text"
+          placeholder="Nom de l'entreprise" autocomplete="off"
+          value="${isEdit && editContact.entreprise ? _esc(editContact.entreprise) : ''}" />
+      </label>
+      <label for="cfTel">
+        Téléphone
+        <input id="cfTel" name="telephone" type="tel"
+          placeholder="+41 79 000 00 00" autocomplete="tel"
+          value="${isEdit && editContact.telephone ? _esc(editContact.telephone) : ''}" />
+      </label>
+      <label for="cfEmail">
+        Email
+        <input id="cfEmail" name="email" type="email"
+          placeholder="nom@exemple.com" autocomplete="email"
+          value="${isEdit && editContact.email ? _esc(editContact.email) : ''}" />
+      </label>
+      <label for="cfNote">
+        Note
+        <textarea id="cfNote" name="note" rows="2"
+          placeholder="Canal de contact, contexte…">${isEdit && editContact.note ? _esc(editContact.note) : ''}</textarea>
+      </label>
+      <button class="btn-action sheet-submit" type="submit">
+        ${isEdit ? 'Enregistrer' : 'Ajouter le contact'}
+      </button>
+    </form>`;
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(sheet);
+  $('closeSheet').addEventListener('click', _closeSheet);
+
+  $('contactForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const form = e.target;
+    const nom  = form.nom.value.trim();
+    if (!nom) { $('cfNom').focus(); return; }
+
+    if (isEdit) {
+      const idx = state.contacts.findIndex(c => c.id === editContact.id);
+      if (idx !== -1) {
+        state.contacts[idx].nom        = nom;
+        state.contacts[idx].entreprise = form.entreprise.value.trim();
+        state.contacts[idx].telephone  = form.telephone.value.trim();
+        state.contacts[idx].email      = form.email.value.trim();
+        state.contacts[idx].note       = form.note.value.trim();
+        save.contacts();
+      }
+    } else {
+      const contact = {
+        id:          _genId(),
+        nom,
+        entreprise:  form.entreprise.value.trim(),
+        telephone:   form.telephone.value.trim(),
+        email:       form.email.value.trim(),
+        note:        form.note.value.trim(),
+        dateContact: new Date().toISOString().slice(0, 10),
+        statut:      'client',
+        projetId:    null,
+      };
+      state.contacts.push(contact);
+      save.contacts();
+    }
+
+    _closeSheet();
+    setTimeout(() => navigateTo('prospection'), 360);
+  });
+
+  requestAnimationFrame(() => { overlay.classList.add('is-visible'); sheet.classList.add('is-open'); });
+  setTimeout(() => $('cfNom')?.focus(), 340);
 }
 
 function _viewProjet() {
@@ -1171,8 +1488,8 @@ function _subviewPreparer(projet) {
     tauxVal   = `CHF ${t}/h`; tauxLabel = 'taux implicite'; tauxCls = _tauxImplClass(t);
   }
 
-  const date = projet.datePrevue
-    ? new Date(projet.datePrevue).toLocaleDateString('fr-CH',
+  const dateDisplay = projet.dateShooting
+    ? new Date(projet.dateShooting).toLocaleDateString('fr-CH',
         { day:'numeric', month:'short', year:'numeric' })
     : '';
 
@@ -1241,8 +1558,12 @@ function _subviewPreparer(projet) {
             <p class="offre-meta">${[
               TYPE_LABELS[projet.type],
               projet.clientNom ? _esc(projet.clientNom) : '',
-              date,
             ].filter(Boolean).join(' · ')}</p>
+            <div class="offre-date-row">
+              <label class="offre-date-label" for="dateShooting">📅 Date de shooting</label>
+              <input id="dateShooting" class="offre-date-input" type="date"
+                value="${projet.dateShooting ?? ''}" />
+            </div>
             <button class="btn-link-edit" id="btnEditProjet" type="button">Modifier</button>
             <div class="photos-cmd-row">
               <label class="photos-cmd-label" for="photosCommandeesInput">Photos commandées</label>
@@ -1292,43 +1613,72 @@ function _subviewPreparer(projet) {
         </div>
       </div>
 
-      <!-- ── 4. Feuille de route ── -->
-      <div class="feuille-route glass-card offre-section">
-        <p class="offre-section-title">Feuille de route</p>
-        <label for="frContact">
-          Contact client
-          <input id="frContact" type="text"
-            placeholder="Nom · +41 79 000 00 00"
-            autocomplete="off"
-            value="${_esc(fr.contact ?? '')}" />
-        </label>
-        <label for="frLieu">
-          Lieu
-          <input id="frLieu" type="text"
-            placeholder="Adresse ou lieu"
-            autocomplete="off"
-            value="${_esc(fr.lieu ?? '')}" />
-        </label>
-        <label for="frNotes">
-          Notes
-          <textarea id="frNotes" rows="3"
-            placeholder="Ambiance, style, contraintes…"
-            style="resize:vertical;">${_esc(fr.notes ?? '')}</textarea>
-        </label>
-        <p class="shots-label">Plan de shooting</p>
-        <div id="shotsList">${shotsHtml}</div>
-        <div class="shot-add-row">
-          <input id="shotInput" type="text"
-            placeholder="Ex: Portrait CEO · 3 variantes"
-            autocomplete="off" autocapitalize="sentences" />
-          <button class="btn-shot-add" id="btnAddShot" type="button" aria-label="Ajouter">+</button>
+      <!-- ── 4. Feuille de route (accordéon, déplié par défaut) ── -->
+      <div class="accordion glass-card" data-acc="feuille">
+        <button class="accordion-header" type="button" aria-expanded="true" data-acc-btn="feuille">
+          <span class="accordion-title">Feuille de route</span>
+          <svg class="accordion-chevron is-open" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+        <div class="accordion-body" data-acc-body="feuille">
+          <label for="frContact">
+            Contact client
+            <input id="frContact" type="text"
+              placeholder="Nom · +41 79 000 00 00"
+              autocomplete="off"
+              value="${_esc(fr.contact ?? '')}" />
+          </label>
+          <label for="frLieu">
+            Lieu
+            <input id="frLieu" type="text"
+              placeholder="Adresse ou lieu"
+              autocomplete="off"
+              value="${_esc(fr.lieu ?? '')}" />
+          </label>
+          <label for="frNotes">
+            Notes
+            <textarea id="frNotes" rows="3"
+              placeholder="Ambiance, style, contraintes…"
+              style="resize:vertical;">${_esc(fr.notes ?? '')}</textarea>
+          </label>
         </div>
       </div>
 
-      <!-- ── 5. Checklist matériel ── -->
-      <div class="offre-section glass-card">
-        <p class="offre-section-title">Matériel</p>
-        ${_renderChecklistSection(projet)}
+      <!-- ── 5. Plan de shots (accordéon) ── -->
+      <div class="accordion glass-card" data-acc="shots">
+        <button class="accordion-header" type="button" aria-expanded="false" data-acc-btn="shots">
+          <span class="accordion-title">Plan de shots</span>
+          <span class="accordion-badge">${(fr.shots ?? []).length || ''}</span>
+          <svg class="accordion-chevron" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+        <div class="accordion-body is-closed" data-acc-body="shots">
+          <div id="shotsList">${shotsHtml}</div>
+          <div class="shot-add-row">
+            <input id="shotInput" type="text"
+              placeholder="Ex: Portrait CEO · 3 variantes"
+              autocomplete="off" autocapitalize="sentences" />
+            <button class="btn-shot-add" id="btnAddShot" type="button" aria-label="Ajouter">+</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 6. Matériel (accordéon) ── -->
+      <div class="accordion glass-card" data-acc="materiel">
+        <button class="accordion-header" type="button" aria-expanded="false" data-acc-btn="materiel">
+          <span class="accordion-title">Matériel</span>
+          <svg class="accordion-chevron" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+        <div class="accordion-body is-closed" data-acc-body="materiel">
+          ${_renderChecklistSection(projet)}
+        </div>
       </div>
 
       <!-- ── 6. Actions offre ── -->
@@ -1388,11 +1738,25 @@ function _wirePreparer(projet) {
     if (idx !== -1) { state.projets[idx].photosCommandees = val; save.projets(); }
   });
 
+  // Date de shooting — auto-save + autoStatut
+  $('dateShooting')?.addEventListener('change', e => {
+    const val = e.target.value || null;
+    const idx = state.projets.findIndex(p => p.id === projet.id);
+    if (idx !== -1) {
+      state.projets[idx].dateShooting = val;
+      save.projets();
+      _autoStatut(idx);
+    }
+  });
+
   // Modifier le projet
   $('btnEditProjet')?.addEventListener('click', () => {
     _editingProjetId = projet.id;
     _openEditProjetSheet(projet);
   });
+
+  // Accordéons
+  _wireAccordions();
 
   // Checklist matériel
   _wireChecklistSection(projet);
@@ -2502,18 +2866,34 @@ function _addCustomChecklistItem(projet) {
 }
 
 function _refreshChecklistSection(projet) {
-  // Re-render uniquement le contenu de la card matériel (sans toucher aux quotas)
-  const card = document.querySelector('.offre-section.glass-card:has(.checklist-add-row)')
-    ?? document.querySelector('.offre-section.glass-card:last-of-type');
-  if (!card) { _refreshProjetSubView(); return; }
-  const title = card.querySelector('.offre-section-title');
-  // Garde le titre, remplace le reste
-  card.innerHTML = `<p class="offre-section-title">Matériel</p>${_renderChecklistSection(projet)}`;
+  // Le contenu est maintenant dans l'accordéon body[data-acc-body="materiel"]
+  const body = document.querySelector('[data-acc-body="materiel"]');
+  if (!body) { _refreshProjetSubView(); return; }
+  body.innerHTML = _renderChecklistSection(projet);
   _wireChecklistSection(projet);
   $('btnGoToProfil')?.addEventListener('click', () => navigateTo('profil'));
 }
 
 // _ensureChecklist supprimé — remplacé par la logique matériel profil (Phase 4)
+
+// ════════════════════════════════════════════════════════
+// ACCORDÉONS — générique, réutilisable
+// ════════════════════════════════════════════════════════
+
+function _wireAccordions() {
+  document.querySelectorAll('[data-acc-btn]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key  = btn.dataset.accBtn;
+      const body = document.querySelector(`[data-acc-body="${key}"]`);
+      if (!body) return;
+      const isOpen = !body.classList.contains('is-closed');
+      body.classList.toggle('is-closed', isOpen);
+      btn.setAttribute('aria-expanded', String(!isOpen));
+      const chevron = btn.querySelector('.accordion-chevron');
+      if (chevron) chevron.classList.toggle('is-open', !isOpen);
+    });
+  });
+}
 
 function _ico_folder_lg() {
   return `<svg class="empty-icon" width="52" height="52" viewBox="0 0 24 24" fill="none"
@@ -2524,9 +2904,17 @@ function _ico_folder_lg() {
 }
 
 function _viewInsights() {
+  const termines = state.projets.filter(p => p.statut === 'termine');
+  const manquent = Math.max(0, 3 - termines.length);
+
   return `
-    <div class="empty-state" style="margin:32px 16px;min-height:200px;">
-      <p style="font-size:.8rem;color:rgba(30,50,70,.3);">Module Insights — Phase 8</p>
+    <div class="empty-state-view">
+      ${_ico_empty_flash()}
+      <p class="empty-state-title">${
+        manquent > 0
+          ? `${manquent} projet${manquent > 1 ? 's' : ''} terminé${manquent > 1 ? 's' : ''} de plus pour débloquer tes insights.`
+          : '3 projets terminés pour débloquer tes insights.'
+      }</p>
     </div>`;
 }
 
@@ -2642,23 +3030,36 @@ function _viewProfil() {
         Enregistrer
       </button>
 
-      <!-- ── Mon matériel ── -->
-      <div class="profil-section glass-card">
-        <p class="profil-section-title">Mon matériel habituel</p>
-        <p class="profil-section-hint" style="margin:0 0 4px;">
-          Affiché dans la checklist de chaque projet.
-        </p>
-        <ul class="materiel-list" id="materielList">
-          ${_renderMaterielList()}
-        </ul>
-        <div class="materiel-add-row">
-          <input id="materielNewItem" class="materiel-add-input"
-            type="text" placeholder="Ex. Boîtier Sony A7 IV"
-            autocapitalize="sentences" autocomplete="off" />
-          <button class="checklist-add-btn" id="btnAddMateriel"
-            type="button" aria-label="Ajouter">+</button>
+      <!-- ── Mon matériel (accordéon) ── -->
+      ${(() => {
+        const hasMat = (state.user?.materiel ?? []).filter(m => m.actif !== false).length > 0;
+        return `
+      <div class="accordion profil-section glass-card" data-acc="profil-mat">
+        <button class="accordion-header" type="button"
+          aria-expanded="${hasMat}" data-acc-btn="profil-mat">
+          <span class="accordion-title">Mon matériel habituel</span>
+          <svg class="accordion-chevron${hasMat ? ' is-open' : ''}" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+        <div class="accordion-body${hasMat ? '' : ' is-closed'}" data-acc-body="profil-mat">
+          <p class="profil-section-hint" style="margin:0 0 8px;">
+            Affiché dans la checklist de chaque projet.
+          </p>
+          <ul class="materiel-list" id="materielList">
+            ${_renderMaterielList()}
+          </ul>
+          <div class="materiel-add-row">
+            <input id="materielNewItem" class="materiel-add-input"
+              type="text" placeholder="Ex. Boîtier Sony A7 IV"
+              autocapitalize="sentences" autocomplete="off" />
+            <button class="checklist-add-btn" id="btnAddMateriel"
+              type="button" aria-label="Ajouter">+</button>
+          </div>
         </div>
-      </div>
+      </div>`;
+      })()}
 
       <!-- ── Données ── -->
       <div class="profil-section glass-card">
@@ -2727,6 +3128,9 @@ function _wireMaterielDeletes() {
 // ─── Profil : wiring ──────────────────────────────────
 
 function _wireProfilView() {
+  // Accordéons Profil
+  _wireAccordions();
+
   // Initialiser le mode depuis les données sauvegardées
   _profilMode = state.user?.profilMode ?? 'simple';
 
@@ -2839,6 +3243,50 @@ function _saveProfil() {
 // ════════════════════════════════════════════════════════
 // ICÔNES SVG — function declarations pour le hoisting
 // ════════════════════════════════════════════════════════
+
+// ── Icônes état vide ────────────────────────────────────
+
+function _ico_empty_tripod() {
+  return `<svg class="empty-state-icon" width="80" height="80" viewBox="0 0 80 80"
+    fill="none" stroke="rgba(20,40,60,0.2)" stroke-width="1.5"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <!-- tête -->
+    <rect x="24" y="14" width="32" height="18" rx="4"/>
+    <circle cx="40" cy="23" r="5"/>
+    <!-- pied central -->
+    <line x1="40" y1="32" x2="40" y2="58"/>
+    <!-- pieds latéraux -->
+    <line x1="40" y1="48" x2="20" y2="68"/>
+    <line x1="40" y1="48" x2="60" y2="68"/>
+    <!-- tablette -->
+    <line x1="30" y1="57" x2="50" y2="57"/>
+  </svg>`;
+}
+
+function _ico_empty_lens() {
+  return `<svg class="empty-state-icon" width="80" height="80" viewBox="0 0 80 80"
+    fill="none" stroke="rgba(20,40,60,0.2)" stroke-width="1.5"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <!-- objectif — cercles concentriques -->
+    <circle cx="40" cy="40" r="26"/>
+    <circle cx="40" cy="40" r="18"/>
+    <circle cx="40" cy="40" r="9"/>
+    <!-- traits de mise au point -->
+    <line x1="40" y1="10" x2="40" y2="16"/>
+    <line x1="40" y1="64" x2="40" y2="70"/>
+    <line x1="10" y1="40" x2="16" y2="40"/>
+    <line x1="64" y1="40" x2="70" y2="40"/>
+  </svg>`;
+}
+
+function _ico_empty_flash() {
+  return `<svg class="empty-state-icon" width="80" height="80" viewBox="0 0 80 80"
+    fill="none" stroke="rgba(20,40,60,0.2)" stroke-width="1.5"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <!-- éclair -->
+    <polyline points="46,10 30,42 42,42 34,70 54,34 42,34"/>
+  </svg>`;
+}
 
 function _ico_camera() {
   return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"

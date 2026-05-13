@@ -2051,3 +2051,290 @@
   transition: color .12s;
 }
 .btn-text-muted:active { color: rgba(30,50,70,.7); }
+
+/* ════════════════════════════════════════════════════════
+   AUTOCOMPLÉTION CLIENT — dropdown
+   ════════════════════════════════════════════════════════ */
+
+.client-dropdown {
+  background: rgba(245,248,252,.97);
+  border: 1px solid rgba(30,50,70,.12);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(20,40,60,.12);
+  overflow: hidden;
+  margin-top: 4px;
+  z-index: 200;
+}
+
+.client-dropdown[hidden] { display: none; }
+
+.client-dropdown-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(30,50,70,.06);
+  text-align: left;
+  cursor: pointer;
+  transition: background .1s;
+}
+.client-dropdown-item:last-child { border-bottom: none; }
+.client-dropdown-item:active { background: rgba(213,112,10,.07); }
+
+.dropdown-nom {
+  font-size: .84rem;
+  font-weight: 600;
+  color: rgba(20,40,60,.88);
+  font-family: 'DM Sans', sans-serif;
+}
+
+.dropdown-ent {
+  font-size: .74rem;
+  color: rgba(30,50,70,.4);
+  font-family: 'DM Sans', sans-serif;
+}
+
+/* ════════════════════════════════════════════════════════
+   MODULE CONTACTS
+   ════════════════════════════════════════════════════════ */
+
+.contacts-view {
+  padding: 8px 0 88px;
+}
+
+.contacts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 16px;
+}
+
+.contact-card {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contact-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.contact-card-main { flex: 1; min-width: 0; }
+
+.contact-nom {
+  font-size: .92rem;
+  font-weight: 700;
+  color: rgba(20,40,60,.9);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.contact-entreprise {
+  font-size: .76rem;
+  color: rgba(30,50,70,.5);
+  margin: 2px 0 0;
+}
+
+.contact-menu-btn {
+  font-size: 1rem;
+  color: rgba(30,50,70,.3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+  letter-spacing: .05em;
+  flex-shrink: 0;
+}
+
+.contact-links {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.contact-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: .8rem;
+  font-weight: 500;
+  text-decoration: none;
+  padding: 6px 10px;
+  border-radius: 8px;
+  transition: background .12s;
+  align-self: flex-start;
+}
+
+.contact-link--tel {
+  color: #2E7D52;
+  background: rgba(46,125,82,.08);
+}
+.contact-link--tel:active { background: rgba(46,125,82,.16); }
+
+.contact-link--email {
+  color: #3A7ABF;
+  background: rgba(58,122,191,.08);
+}
+.contact-link--email:active { background: rgba(58,122,191,.16); }
+
+.contact-note {
+  font-size: .76rem;
+  color: rgba(30,50,70,.45);
+  margin: 0;
+  line-height: 1.5;
+  font-style: italic;
+}
+
+.contact-projets-count {
+  font-size: .7rem;
+  font-weight: 600;
+  color: rgba(30,50,70,.3);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+/* ════════════════════════════════════════════════════════
+   ÉTATS VIDES — illustration + titre
+   ════════════════════════════════════════════════════════ */
+
+.empty-state-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 56px 32px 40px;
+  text-align: center;
+}
+
+.empty-state-icon {
+  display: block;
+  opacity: .9;
+}
+
+.empty-state-title {
+  font-size: .9rem;
+  font-weight: 500;
+  color: rgba(30,50,70,.4);
+  margin: 0;
+  max-width: 240px;
+  line-height: 1.5;
+}
+
+/* ════════════════════════════════════════════════════════
+   OFFRE — champ dateShooting inline
+   ════════════════════════════════════════════════════════ */
+
+.offre-date-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 2px;
+  flex-wrap: wrap;
+}
+
+.offre-date-label {
+  font-size: .76rem;
+  color: rgba(30,50,70,.5);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.offre-date-input {
+  font-family: 'DM Sans', sans-serif;
+  font-size: .8rem;
+  color: rgba(20,40,60,.8);
+  background: rgba(255,255,255,.6);
+  border: 1px solid rgba(30,50,70,.15);
+  border-radius: 8px;
+  padding: 5px 8px;
+  flex: 1;
+  min-width: 130px;
+}
+
+/* ════════════════════════════════════════════════════════
+   ACCORDÉONS — Préparer & Profil
+   ════════════════════════════════════════════════════════ */
+
+.accordion {
+  /* hérite du style glass-card — pas de padding supplémentaire */
+  overflow: hidden;
+}
+
+.accordion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 16px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(30,50,70,.06);
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .15s ease;
+}
+
+.accordion-header:active {
+  background: rgba(30,50,70,.04);
+}
+
+/* quand le body est ouvert, retire la border-bottom */
+.accordion-header[aria-expanded="true"] {
+  border-bottom-color: rgba(30,50,70,.08);
+}
+
+.accordion-title {
+  font-size: .86rem;
+  font-weight: 600;
+  color: rgba(20,40,60,.82);
+  flex: 1;
+}
+
+.accordion-badge {
+  font-size: .72rem;
+  color: rgba(30,50,70,.35);
+  font-weight: 600;
+  margin-left: auto;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.accordion-chevron {
+  flex-shrink: 0;
+  color: rgba(30,50,70,.3);
+  transition: transform .25s ease;
+  display: flex;
+  align-items: center;
+}
+
+.accordion-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.accordion-body {
+  padding: 12px 16px 16px;
+  overflow: hidden;
+  /* animation d'ouverture via max-height */
+  max-height: 2000px;
+  transition: max-height .28s ease, padding .28s ease, opacity .2s ease;
+  opacity: 1;
+}
+
+.accordion-body.is-closed {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+}
