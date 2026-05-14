@@ -49,14 +49,16 @@ const CATEGORIES = {
 // ════════════════════════════════════════════════════════
 
 const STATUTS = {
-  brouillon: { label: 'Brouillon',     color: 'rgba(30,50,70,0.35)', bg: 'rgba(30,50,70,0.07)'   },
-  avenir:    { label: 'À venir',       color: '#3A7ABF',             bg: 'rgba(58,122,191,0.12)' },
-  encours:   { label: 'En cours',      color: '#2E7D52',             bg: 'rgba(46,125,82,0.12)'  },
-  atraiter:  { label: 'À traiter',     color: '#B8600A',             bg: 'rgba(213,112,10,0.13)' },
-  termine:   { label: 'Terminé',       color: '#2E7D52',             bg: 'rgba(46,125,82,0.13)'  },
-  sanssuite: { label: 'Sans suite',    color: 'rgba(30,50,70,0.25)', bg: 'rgba(30,50,70,0.05)'   },
-  // conservé pour données existantes ayant 'attente'
-  attente:   { label: 'Offre envoyée', color: '#B8600A',             bg: 'rgba(213,112,10,0.12)' },
+  brouillon:     { label: 'Brouillon',      color: 'rgba(30,50,70,0.35)', bg: 'rgba(30,50,70,0.07)'   },
+  offreenvoyee:  { label: 'Offre envoyée',  color: '#3A7ABF',             bg: 'rgba(58,122,191,0.12)' },
+  offreacceptee: { label: 'Offre acceptée', color: '#5AAE82',             bg: 'rgba(90,174,130,0.12)' },
+  avenir:        { label: 'À venir',        color: '#3A7ABF',             bg: 'rgba(58,122,191,0.12)' },
+  encours:       { label: 'En cours',       color: '#2E7D52',             bg: 'rgba(46,125,82,0.12)'  },
+  atraiter:      { label: 'À traiter',      color: '#B8600A',             bg: 'rgba(213,112,10,0.13)' },
+  termine:       { label: 'Terminé',        color: '#2E7D52',             bg: 'rgba(46,125,82,0.13)'  },
+  sanssuite:     { label: 'Sans suite',     color: 'rgba(30,50,70,0.25)', bg: 'rgba(30,50,70,0.05)'   },
+  // rétro-compat données existantes avec statut 'attente'
+  attente:       { label: 'Offre envoyée',  color: '#3A7ABF',             bg: 'rgba(58,122,191,0.12)' },
 };
 
 // ════════════════════════════════════════════════════════
@@ -68,8 +70,8 @@ const state = {
   user:           Storage.get('user')     ?? null,
   contacts:       Storage.get('contacts') ?? [],
   projets:        Storage.get('projets')  ?? [],
-  activeProjetId: null,    // projet sélectionné dans le module Projet
-  projetSubView:  'preparer', // sous-onglet actif
+  activeProjetId: null,   // projet sélectionné dans Terrain
+  projetSubView:  'brief', // sous-onglet actif (brief/chrono/frais/bilan)
 };
 
 const save = {
@@ -126,11 +128,11 @@ let _profilMode      = 'simple'; // 'simple' | 'avance' — mode objectifs finan
 // ════════════════════════════════════════════════════════
 
 const TABS = [
-  { id: 'studio',      label: 'Studio',   icon: _ico_folder()  },
-  { id: 'prospection', label: 'Contacts', icon: _ico_users()   },
-  { id: 'projet',      label: 'Projets',  icon: _ico_camera()  },
-  { id: 'insights',    label: 'Analyse',  icon: _ico_chart()   },
-  { id: 'profil',      label: 'Moi',      icon: _ico_user()    },
+  { id: 'studio',      label: 'Studio',  icon: _ico_folder()  },
+  { id: 'terrain',     label: 'Terrain', icon: _ico_camera()  },
+  { id: 'prospection', label: 'À venir', icon: _ico_users()   },
+  { id: 'insight',     label: 'Insight', icon: _ico_chart()   },
+  { id: 'moi',         label: 'Moi',     icon: _ico_user()    },
 ];
 
 // ════════════════════════════════════════════════════════
@@ -153,6 +155,25 @@ function _migrateProjects() {
     // v1→v2 : revisions absent dans quotas
     if (state.projets[i].quotas && state.projets[i].quotas.revisions === undefined) {
       state.projets[i].quotas.revisions = 0;
+      changed = true;
+    }
+    // v2→v3 : attente → offreenvoyee
+    if (state.projets[i].statut === 'attente') {
+      state.projets[i].statut = 'offreenvoyee';
+      changed = true;
+    }
+    // v3→v4 : frais réels — champ categorie absent
+    (state.projets[i].frais ?? []).forEach((f, fi) => {
+      if (!f.categorie) {
+        state.projets[i].frais[fi].categorie = 'autre';
+        changed = true;
+      }
+    });
+    // v3→v4 : feuilleRoute — champs contact séparés
+    const fr = state.projets[i].feuilleRoute;
+    if (fr && fr.telephone === undefined) {
+      fr.telephone = '';
+      fr.email     = '';
       changed = true;
     }
   });
@@ -190,9 +211,9 @@ function navigateTo(view) {
     btn.classList.toggle('is-active', btn.dataset.tab === view)
   );
 
-  // FAB : masqué sur Profil uniquement
+  // FAB : masqué sur Moi et Ficheoffre
   const fab = $('fabGlobal');
-  if (fab) fab.style.display = view === 'profil' ? 'none' : '';
+  if (fab) fab.style.display = (view === 'moi' || view === 'ficheoffre') ? 'none' : '';
 
   _renderTopbar(view);
 
@@ -213,9 +234,24 @@ function _renderTopbar(view) {
   const now  = new Date();
   const mois = now.toLocaleDateString('fr-CH', { month: 'long' });
   const an   = now.getFullYear();
-  $('topbarEyebrow').textContent = `Frames · ${mois} ${an}`;
+  if (view === 'ficheoffre') {
+    const p = state.projets.find(x => x.id === state.activeProjetId);
+    const eyebrow = $('topbarEyebrow');
+    eyebrow.textContent = '← Studio';
+    eyebrow.style.cursor = 'pointer';
+    eyebrow.style.color  = '#3A7ABF';
+    eyebrow.onclick = () => navigateTo('studio');
+    $('topbarTitle').textContent = p ? p.nom : 'Fiche offre';
+    $('topbarAction').hidden = true;
+    return;
+  }
+  const eyebrowEl = $('topbarEyebrow');
+  eyebrowEl.style.cursor = '';
+  eyebrowEl.style.color  = '';
+  eyebrowEl.onclick = null;
+  eyebrowEl.textContent = `Frames · ${mois} ${an}`;
   $('topbarTitle').textContent   = TABS.find(t => t.id === view)?.label ?? 'Frames';
-  $('topbarAction').hidden = !['studio', 'prospection'].includes(view);
+  $('topbarAction').hidden = view !== 'studio';
 }
 
 function _wireTopbarAction(view) {
@@ -224,8 +260,7 @@ function _wireTopbarAction(view) {
   const fresh = old.cloneNode(true);
   old.parentNode.replaceChild(fresh, old);
 
-  if (view === 'studio')      fresh.addEventListener('click', _openNewProjectSheet);
-  if (view === 'prospection') fresh.addEventListener('click', () => _openContactSheet());
+  if (view === 'studio') fresh.addEventListener('click', _openNewProjectSheet);
 }
 
 // ════════════════════════════════════════════════════════
@@ -238,20 +273,29 @@ function _renderView(view, el) {
       el.innerHTML = _viewStudio();
       _wireStudio();
       break;
+    case 'ficheoffre':
+      el.innerHTML = _viewFicheOffre();
+      _wireFicheOffre();
+      break;
+    case 'terrain':
+      el.innerHTML = _viewTerrain();
+      _wireTerrain();
+      break;
     case 'prospection':
       el.innerHTML = _viewProspection();
       _wireProspection();
       break;
-    case 'projet':
-      el.innerHTML = _viewProjet();
-      _wireProjet();
+    case 'insight':
+      el.innerHTML = _viewInsights();
       break;
-    case 'insights':    el.innerHTML = _viewInsights();    break;
-    case 'profil':
+    case 'moi':
       el.innerHTML = _viewProfil();
       _wireProfilView();
       break;
-    default:            el.innerHTML = '';
+    // Alias rétro-compat (anciens bookmarks)
+    case 'insights': el.innerHTML = _viewInsights(); break;
+    case 'profil':   el.innerHTML = _viewProfil(); _wireProfilView(); break;
+    default:         el.innerHTML = '';
   }
 }
 
@@ -272,6 +316,480 @@ const TYPE_LABELS = {
   commercial: 'Commercial',
   autre:      'Autre',
 };
+
+// ════════════════════════════════════════════════════════
+// MODULE FICHE OFFRE — Phase 2
+// ════════════════════════════════════════════════════════
+
+const DROITS_OPTIONS = [
+  { key: 'aucun',      label: 'Aucun droit cédé',              pct: 0    },
+  { key: 'prive',      label: 'Usage privé',                    pct: 0    },
+  { key: 'comm_local', label: 'Commercial local (1 an)',         pct: 0.15 },
+  { key: 'comm_nat',   label: 'Commercial national (2 ans)',     pct: 0.25 },
+  { key: 'comm_world', label: 'Commercial mondial illimité',     pct: 0.40 },
+  { key: 'editorial',  label: 'Éditorial / presse',              pct: 0.10 },
+];
+
+function _ensureOffreFields(p) {
+  if (!p.typeClient)             p.typeClient        = 'nouveau';
+  if (p.noteInterne   == null)   p.noteInterne       = '';
+  if (p.videosCommandees == null) p.videosCommandees = 0;
+  if (p.roundsRevisions  == null) p.roundsRevisions  = 1;
+  if (!p.modeFacturation)        p.modeFacturation   = 'forfait';
+  if (p.forfaitJours  == null)   p.forfaitJours      = 0;
+  if (!p.droitsUtilisation)      p.droitsUtilisation = 'aucun';
+  if (!p.fraisEstimes)           p.fraisEstimes      = { deplacement: 0, repas: 0, hebergement: 0, materiel: 0, autre: 0 };
+  if (p.acompte       == null)   p.acompte           = 30;
+  if (p.delaiLivraison == null)  p.delaiLivraison    = 14;
+  if (p.dateEnvoi     == null)   p.dateEnvoi         = null;
+}
+
+function _calcPerdiem(p) {
+  const h = Number(p.quotas?.shooting ?? 0);
+  return Math.round((h / 8) * (state.user?.perdiem ?? 50));
+}
+
+function _calcTotalFraisEstimes(p) {
+  return Object.values(p.fraisEstimes ?? {}).reduce((s, v) => s + (Number(v) || 0), 0);
+}
+
+function _getDroitsPct(key) {
+  return DROITS_OPTIONS.find(o => o.key === key)?.pct ?? 0;
+}
+
+function _prixConseilleSimil(p) {
+  const similaires = state.projets.filter(x =>
+    x.id !== p.id && x.type === p.type && x.statut === 'termine' && Number(x.prixFacture) > 0
+  );
+  if (!similaires.length) return null;
+  return Math.round(similaires.reduce((s, x) => s + Number(x.prixFacture), 0) / similaires.length);
+}
+
+function _prixConseilleQuotas(p) {
+  const taux = Number(state.user?.tauxCible ?? 0);
+  if (!taux) return null;
+  const heures = Object.values(p.quotas ?? {}).reduce((s, v) => s + (Number(v) || 0), 0);
+  const base   = heures * taux;
+  const frais  = _calcTotalFraisEstimes(p);
+  const droits = _getDroitsPct(p.droitsUtilisation ?? 'aucun');
+  return Math.round(base * (1 + droits) + frais);
+}
+
+function _renderPrixConseille(p) {
+  const simil  = _prixConseilleSimil(p);
+  const quotas = _prixConseilleQuotas(p);
+  return `
+    <div class="fo-prix-conseil">
+      <div class="fo-prix-item">
+        <span class="fo-prix-label">Projets similaires</span>
+        <span class="fo-prix-val" id="foPrixSimil">${simil != null ? _fmtCHF(simil) : '—'}</span>
+      </div>
+      <div class="fo-prix-sep"></div>
+      <div class="fo-prix-item">
+        <span class="fo-prix-label">Quotas × taux</span>
+        <span class="fo-prix-val" id="foPrixQuotas">${quotas != null ? _fmtCHF(quotas) : '—'}</span>
+      </div>
+    </div>`;
+}
+
+function _renderOffreActions(p) {
+  if (p.statut === 'brouillon') {
+    return `
+      <button class="btn-action" id="btnEnvoyerOffre" type="button">
+        Envoyer l'offre →
+      </button>`;
+  }
+  if (p.statut === 'offreenvoyee' || p.statut === 'attente') {
+    const jours = p.dateEnvoi
+      ? Math.floor((Date.now() - new Date(p.dateEnvoi)) / 86400000)
+      : null;
+    return `
+      ${jours != null ? `<p class="fo-envoi-date">Envoyée il y a ${jours}j</p>` : ''}
+      <button class="btn-action" id="btnAccepterOffre" type="button">
+        Offre acceptée ✓
+      </button>
+      <button class="btn-action btn-secondary" id="btnMajOffre" type="button">
+        Mettre à jour l'offre
+      </button>
+      <button class="fo-corriger-btn" id="btnSansSuiteOffre" type="button">
+        Sans suite
+      </button>`;
+  }
+  return '';
+}
+
+function _viewFicheOffre() {
+  const p = state.projets.find(x => x.id === state.activeProjetId);
+  if (!p) return `<div class="fo-view"><p style="padding:32px;text-align:center;opacity:.4;">Projet introuvable.</p></div>`;
+
+  _ensureOffreFields(p);
+  save.projets();
+
+  const locked = p.statut === 'offreacceptee';
+  const dis    = locked ? ' disabled' : '';
+
+  const typeOptions = [
+    ['corporate','Corporate'], ['portrait','Portrait'], ['mariage','Mariage'],
+    ['event','Événement'], ['commercial','Commercial'], ['autre','Autre'],
+  ];
+  const totalFrais = _calcTotalFraisEstimes(p);
+  const perdiem    = _calcPerdiem(p);
+
+  return `
+    <div class="fo-view">
+
+      ${locked ? `
+      <!-- Bandeau verrouillé -->
+      <div class="fo-locked-banner">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+          <rect x="3" y="11" width="18" height="11" rx="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        Offre acceptée — fiche verrouillée
+      </div>` : ''}
+
+      <!-- 1 · Infos projet -->
+      <div class="fo-section glass-card">
+        <p class="fo-section-title">Infos projet</p>
+        <label for="foNom">Nom du projet
+          <input id="foNom" type="text" value="${_esc(p.nom)}"
+            autocomplete="off" data-field="nom"${dis} />
+        </label>
+        <label for="foClientNom">Client
+          <input id="foClientNom" type="text" value="${_esc(p.clientNom ?? '')}"
+            autocomplete="off" placeholder="Nom du client" data-field="clientNom"${dis} />
+        </label>
+        <div class="form-row">
+          <label for="foType">Type
+            <select id="foType" data-field="type"${dis}>
+              ${typeOptions.map(([v, l]) =>
+                `<option value="${v}"${p.type === v ? ' selected' : ''}>${l}</option>`
+              ).join('')}
+            </select>
+          </label>
+          <label>Relation client
+            <div class="fo-radio-group">
+              <label class="fo-radio">
+                <input type="radio" name="foTypeClient" value="nouveau"
+                  ${p.typeClient !== 'fidele' ? 'checked' : ''}${dis} />
+                Nouveau
+              </label>
+              <label class="fo-radio">
+                <input type="radio" name="foTypeClient" value="fidele"
+                  ${p.typeClient === 'fidele' ? 'checked' : ''}${dis} />
+                Fidèle
+              </label>
+            </div>
+          </label>
+        </div>
+        <label for="foNoteInterne">Note interne
+          <textarea id="foNoteInterne" rows="2"
+            placeholder="Remarques privées, contexte, historique…"
+            data-field="noteInterne"${dis}>${_esc(p.noteInterne ?? '')}</textarea>
+        </label>
+      </div>
+
+      <!-- 2 · Livrables -->
+      <div class="fo-section glass-card">
+        <p class="fo-section-title">Livrables</p>
+        <div class="form-row">
+          <label for="foPhotos">Photos livrées
+            <input id="foPhotos" type="number" min="0" step="1" inputmode="numeric"
+              value="${p.photosCommandees ?? ''}" placeholder="0"
+              data-field="photosCommandees"${dis} />
+          </label>
+          <label for="foVideos">Vidéos
+            <input id="foVideos" type="number" min="0" step="1" inputmode="numeric"
+              value="${p.videosCommandees ?? ''}" placeholder="0"
+              data-field="videosCommandees"${dis} />
+          </label>
+        </div>
+        <div class="form-row">
+          <label for="foRevisions">Rounds retouches
+            <input id="foRevisions" type="number" min="0" step="1" inputmode="numeric"
+              value="${p.roundsRevisions ?? 1}" placeholder="1"
+              data-field="roundsRevisions"${dis} />
+          </label>
+          <label for="foDelai">Délai livraison (j)
+            <input id="foDelai" type="number" min="0" step="1" inputmode="numeric"
+              value="${p.delaiLivraison ?? 14}" placeholder="14"
+              data-field="delaiLivraison"${dis} />
+          </label>
+        </div>
+        <label for="foDateShooting">Date prévue
+          <input id="foDateShooting" type="date"
+            value="${p.dateShooting ?? ''}"
+            data-field="dateShooting"${dis} />
+        </label>
+      </div>
+
+      <!-- 3 · Mode facturation -->
+      <div class="fo-section glass-card">
+        <p class="fo-section-title">Mode de facturation</p>
+        <div class="fo-radio-group fo-radio-group--row">
+          <label class="fo-radio">
+            <input type="radio" name="foModeFactu" value="forfait"
+              ${p.modeFacturation === 'forfait' ? 'checked' : ''}${dis} />
+            Forfait
+          </label>
+          <label class="fo-radio">
+            <input type="radio" name="foModeFactu" value="taux"
+              ${p.modeFacturation === 'taux' ? 'checked' : ''}${dis} />
+            Taux horaire
+          </label>
+          <label class="fo-radio">
+            <input type="radio" name="foModeFactu" value="jour"
+              ${p.modeFacturation === 'jour' ? 'checked' : ''}${dis} />
+            Jour
+          </label>
+        </div>
+        <div id="foForfaitJoursRow" class="${p.modeFacturation !== 'jour' ? 'is-hidden' : ''}">
+          <label for="foForfaitJours">Nombre de jours
+            <input id="foForfaitJours" type="number" min="0.5" step="0.5" inputmode="decimal"
+              value="${p.forfaitJours || ''}" placeholder="1"
+              data-field="forfaitJours"${dis} />
+          </label>
+        </div>
+      </div>
+
+      <!-- 4 · Temps estimés -->
+      <div class="fo-section glass-card">
+        <p class="fo-section-title">Temps estimés (h)</p>
+        ${Object.entries(CATEGORIES).map(([cat, info]) => `
+          <label for="foQ_${cat}">${info.label}
+            <input id="foQ_${cat}" type="number" min="0" step="0.5" inputmode="decimal"
+              value="${p.quotas?.[cat] ?? 0}" placeholder="0"
+              data-quota="${cat}"${dis} />
+          </label>`).join('')}
+        <p class="fo-perdiem-hint" style="${perdiem <= 0 ? 'display:none;' : ''}">
+          Perdiem estimé : <strong>${_fmtCHF(perdiem)}</strong>
+          (${p.quotas?.shooting ?? 0} h shooting ÷ 8 × ${state.user?.perdiem ?? 50} CHF/j)
+        </p>
+      </div>
+
+      <!-- 5 · Droits d'utilisation -->
+      <div class="fo-section glass-card">
+        <p class="fo-section-title">Droits d'utilisation</p>
+        <label for="foDroits">
+          <select id="foDroits" data-field="droitsUtilisation"${dis}>
+            ${DROITS_OPTIONS.map(o =>
+              `<option value="${o.key}"${p.droitsUtilisation === o.key ? ' selected' : ''}>${o.label}${o.pct > 0 ? ` (+${Math.round(o.pct * 100)} %)` : ''}</option>`
+            ).join('')}
+          </select>
+        </label>
+      </div>
+
+      <!-- 6 · Frais estimés -->
+      <div class="fo-section glass-card">
+        <p class="fo-section-title">Frais estimés (CHF)</p>
+        ${[
+          ['deplacement', 'Déplacement'],
+          ['repas',       'Repas'],
+          ['hebergement', 'Hébergement'],
+          ['materiel',    'Matériel loué'],
+          ['autre',       'Autre'],
+        ].map(([k, l]) => `
+          <label for="foFrais_${k}">${l}
+            <input id="foFrais_${k}" type="number" min="0" step="5" inputmode="numeric"
+              value="${p.fraisEstimes?.[k] ?? 0}" placeholder="0"
+              data-frais="${k}"${dis} />
+          </label>`).join('')}
+        <div class="fo-frais-total" id="foFraisTotal">
+          Total frais : <strong>${_fmtCHF(totalFrais)}</strong>
+        </div>
+      </div>
+
+      <!-- 7 · Prix -->
+      <div class="fo-section glass-card">
+        <p class="fo-section-title">Prix</p>
+        <p class="fo-section-hint">Prix conseillé</p>
+        ${_renderPrixConseille(p)}
+        <label for="foPrixFacture">Prix de l'offre (CHF)
+          <input id="foPrixFacture" type="number" min="0" step="50" inputmode="numeric"
+            value="${p.prixFacture ?? ''}" placeholder="0"
+            data-field="prixFacture"${dis} />
+        </label>
+        <label for="foAcompte">Acompte (%)
+          <input id="foAcompte" type="number" min="0" max="100" step="5" inputmode="numeric"
+            value="${p.acompte ?? 30}" placeholder="30"
+            data-field="acompte"${dis} />
+        </label>
+        <p class="fo-acompte-hint" id="foAcompteVal">${
+          p.prixFacture && p.acompte
+            ? `Acompte : ${_fmtCHF(Math.round(Number(p.prixFacture) * Number(p.acompte) / 100))}`
+            : ''
+        }</p>
+      </div>
+
+      <!-- 8 · Actions -->
+      <div class="fo-section fo-section-actions">
+        ${locked ? '' : _renderOffreActions(p)}
+      </div>
+
+      ${locked ? `
+      <!-- Corriger une erreur (usage exceptionnel) -->
+      <div class="fo-corriger-wrap">
+        <button class="fo-corriger-btn" id="btnCorrigerErreur" type="button">
+          Corriger une erreur
+        </button>
+      </div>` : ''}
+
+      <div style="height:calc(env(safe-area-inset-bottom,16px) + 32px)"></div>
+    </div>`;
+}
+
+function _wireFicheOffre() {
+  const projetIdx = state.projets.findIndex(x => x.id === state.activeProjetId);
+  if (projetIdx === -1) return;
+
+  // Fiche verrouillée : seul "Corriger une erreur" est actif
+  if (state.projets[projetIdx].statut === 'offreacceptee') {
+    $('btnCorrigerErreur')?.addEventListener('click', () => {
+      if (!confirm('Modifier une offre acceptée ?\nLe statut repassera en brouillon.')) return;
+      state.projets[projetIdx].statut = 'brouillon';
+      save.projets();
+      navigateTo('ficheoffre');
+    });
+    return;
+  }
+
+  // Auto-save : champs simples
+  $('viewContainer').querySelectorAll('[data-field]').forEach(el => {
+    el.addEventListener('change', () => {
+      const f = el.dataset.field;
+      const v = el.type === 'number' ? (el.value !== '' ? Number(el.value) : null)
+              : el.type === 'date'   ? (el.value || null)
+              : el.value;
+      state.projets[projetIdx][f] = v;
+      if (f === 'dateShooting') _autoStatut(projetIdx);
+      save.projets();
+      _refreshFoCalcs(projetIdx);
+    });
+  });
+
+  // Auto-save : type client
+  $('viewContainer').querySelectorAll('[name="foTypeClient"]').forEach(r =>
+    r.addEventListener('change', () => {
+      state.projets[projetIdx].typeClient = r.value;
+      save.projets();
+    })
+  );
+
+  // Auto-save : mode facturation + toggle ligne jours
+  $('viewContainer').querySelectorAll('[name="foModeFactu"]').forEach(r =>
+    r.addEventListener('change', () => {
+      state.projets[projetIdx].modeFacturation = r.value;
+      save.projets();
+      $('foForfaitJoursRow')?.classList.toggle('is-hidden', r.value !== 'jour');
+    })
+  );
+
+  // Auto-save : quotas
+  $('viewContainer').querySelectorAll('[data-quota]').forEach(el =>
+    el.addEventListener('change', () => {
+      const cat = el.dataset.quota;
+      if (!state.projets[projetIdx].quotas) state.projets[projetIdx].quotas = {};
+      state.projets[projetIdx].quotas[cat] = Number(el.value) || 0;
+      save.projets();
+      _refreshFoCalcs(projetIdx);
+    })
+  );
+
+  // Auto-save : frais estimés
+  $('viewContainer').querySelectorAll('[data-frais]').forEach(el =>
+    el.addEventListener('change', () => {
+      const k = el.dataset.frais;
+      if (!state.projets[projetIdx].fraisEstimes) state.projets[projetIdx].fraisEstimes = {};
+      state.projets[projetIdx].fraisEstimes[k] = Number(el.value) || 0;
+      save.projets();
+      _refreshFoFraisTotal(projetIdx);
+      _refreshFoPrixQuotas(projetIdx);
+    })
+  );
+
+  _wireOffreActions(projetIdx);
+}
+
+function _wireOffreActions(idx) {
+  $('btnEnvoyerOffre')?.addEventListener('click', () => {
+    const p = state.projets[idx];
+    if (!p.prixFacture || Number(p.prixFacture) <= 0) {
+      if (!confirm('Prix non défini. Envoyer l\'offre quand même ?')) return;
+    }
+    p.statut    = 'offreenvoyee';
+    p.dateEnvoi = new Date().toISOString().slice(0, 10);
+    save.projets();
+    _refreshOffreActionsEl(idx);
+    _renderTopbar('ficheoffre');
+  });
+
+  $('btnMajOffre')?.addEventListener('click', () => {
+    state.projets[idx].dateEnvoi = new Date().toISOString().slice(0, 10);
+    save.projets();
+    _refreshOffreActionsEl(idx);
+  });
+
+  $('btnAccepterOffre')?.addEventListener('click', () => {
+    state.projets[idx].statut = 'offreacceptee';
+    save.projets();
+    state.projetSubView = 'brief';
+    navigateTo('terrain');
+  });
+
+  $('btnSansSuiteOffre')?.addEventListener('click', () => {
+    if (!confirm('Marquer cette offre sans suite ?')) return;
+    state.projets[idx].statut = 'sanssuite';
+    save.projets();
+    navigateTo('studio');
+  });
+}
+
+function _refreshOffreActionsEl(idx) {
+  const p  = state.projets[idx];
+  const el = $('viewContainer')?.querySelector('.fo-section-actions');
+  if (!el) return;
+  el.innerHTML = _renderOffreActions(p);
+  _wireOffreActions(idx);
+}
+
+function _refreshFoCalcs(idx) {
+  const p = state.projets[idx];
+  _refreshFoFraisTotal(idx);
+  _refreshFoPrixQuotas(idx);
+
+  const perdiem = _calcPerdiem(p);
+  const hint    = $('viewContainer')?.querySelector('.fo-perdiem-hint');
+  if (hint) {
+    hint.style.display = perdiem > 0 ? '' : 'none';
+    if (perdiem > 0) {
+      hint.innerHTML = `Perdiem estimé : <strong>${_fmtCHF(perdiem)}</strong>
+        (${p.quotas?.shooting ?? 0} h shooting ÷ 8 × ${state.user?.perdiem ?? 50} CHF/j)`;
+    }
+  }
+
+  const acompteHint = $('foAcompteVal');
+  if (acompteHint) {
+    const px = Number(p.prixFacture) || 0;
+    const ac = Number(p.acompte)    || 0;
+    acompteHint.textContent = px && ac
+      ? `Acompte : ${_fmtCHF(Math.round(px * ac / 100))}`
+      : '';
+  }
+}
+
+function _refreshFoFraisTotal(idx) {
+  const el = $('foFraisTotal');
+  if (el) el.innerHTML = `Total frais : <strong>${_fmtCHF(_calcTotalFraisEstimes(state.projets[idx]))}</strong>`;
+}
+
+function _refreshFoPrixQuotas(idx) {
+  const el = $('foPrixQuotas');
+  if (el) {
+    const v = _prixConseilleQuotas(state.projets[idx]);
+    el.textContent = v != null ? _fmtCHF(v) : '—';
+  }
+}
 
 function _viewStudio() {
   const caMois    = _statsCaMois();
@@ -354,7 +872,9 @@ function _viewStudio() {
 
   const insightHtml = _renderInsightCard();
 
-  const groups   = _groupByClient(state.projets);
+  // Seuls les projets non clôturés apparaissent dans Studio
+  const projetsActifs = state.projets.filter(p => p.statut !== 'termine' && p.statut !== 'sanssuite');
+  const groups   = _groupByClient(projetsActifs);
   const listHtml = groups.map(({ clientNom, items }) => `
     <div class="client-group">
       <p class="client-group-label">${_esc(clientNom)}</p>
@@ -412,45 +932,50 @@ function _renderInsightCard() {
 function _wireStudio() {
   $('btnCreateFirst')?.addEventListener('click', _openNewProjectSheet);
 
-  // Hero card — ouvrir le projet en cours → Temps
+  // Hero card (encours/atraiter) → Terrain / Chrono
   const heroCard = $('viewContainer').querySelector('[data-hero-id]');
   if (heroCard) {
     heroCard.addEventListener('click', () => {
       state.activeProjetId = heroCard.dataset.heroId;
-      state.projetSubView  = 'temps';
-      navigateTo('projet');
+      state.projetSubView  = 'chrono';
+      navigateTo('terrain');
     });
     heroCard.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); heroCard.click(); }
     });
   }
 
-  // Next card — ouvrir le prochain projet → Préparer
+  // Next card (avenir) → Terrain / Brief
   const nextCard = $('viewContainer').querySelector('[data-next-id]');
   if (nextCard) {
     nextCard.addEventListener('click', () => {
       state.activeProjetId = nextCard.dataset.nextId;
-      state.projetSubView  = 'preparer';
-      navigateTo('projet');
+      state.projetSubView  = 'brief';
+      navigateTo('terrain');
     });
     nextCard.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nextCard.click(); }
     });
   }
 
-  // Cartes projet — clic sur la carte → ouvrir dans Projet
+  // Cartes projet — routing par statut (spec diagramme)
   $('viewContainer').querySelectorAll('[data-projet-id]').forEach(card => {
     card.addEventListener('click', e => {
-      if (e.target.closest('.projet-menu-btn')) return; // géré séparément
-      const id  = card.dataset.projetId;
-      const p   = state.projets.find(x => x.id === id);
+      if (e.target.closest('.projet-menu-btn')) return;
+      const id = card.dataset.projetId;
+      const p  = state.projets.find(x => x.id === id);
       if (!p) return;
       state.activeProjetId = id;
-      // Routing intelligent par statut
-      if      (p.statut === 'encours' || p.statut === 'atraiter') state.projetSubView = 'temps';
-      else if (p.statut === 'termine')                           state.projetSubView = 'bilan';
-      else                                                       state.projetSubView = 'preparer';
-      navigateTo('projet');
+      if (p.statut === 'brouillon' || p.statut === 'offreenvoyee' || p.statut === 'attente') {
+        navigateTo('ficheoffre');
+      } else if (p.statut === 'offreacceptee' || p.statut === 'avenir' || p.statut === 'encours') {
+        state.projetSubView = 'brief';
+        navigateTo('terrain');
+      } else if (p.statut === 'atraiter') {
+        state.projetSubView = 'bilan';
+        navigateTo('terrain');
+      }
+      // termine / sanssuite ne sont pas dans la liste Studio
     });
     card.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.click(); }
@@ -586,9 +1111,18 @@ function _renderProjetCard(p) {
   const type = TYPE_LABELS[p.type] ?? p.type ?? '';
   const prix = p.prixFacture ? _fmtCHF(p.prixFacture) : '—';
 
+  // Rappel "Acceptée ?" si offreenvoyee > 7 jours
+  let rappelHtml = '';
+  if (p.statut === 'offreenvoyee' && p.dateEnvoi) {
+    const jours = Math.floor((Date.now() - new Date(p.dateEnvoi)) / 86400000);
+    if (jours > 7) {
+      rappelHtml = `<span class="projet-card-rappel">⚠️ Acceptée ? (${jours}j)</span>`;
+    }
+  }
+
   return `
     <div class="projet-card" data-projet-id="${p.id}" role="button" tabindex="0"
-      style="${p.statut === 'sanssuite' ? 'opacity:0.45;' : ''}">
+      style="border-left: 3px solid ${s.color};">
       <div class="projet-card-header">
         <span class="projet-name">${_esc(p.nom)}</span>
         <span class="statut-pill"
@@ -599,6 +1133,7 @@ function _renderProjetCard(p) {
         ${date ? `<span>·</span><span>${date}</span>` : ''}
         <span class="projet-prix">${prix}</span>
       </div>
+      ${rappelHtml}
       <button class="projet-menu-btn" data-menu-projet-id="${p.id}"
         type="button" aria-label="Options" tabindex="-1">···</button>
     </div>`;
@@ -621,12 +1156,14 @@ function _statutPill(p) {
 function _autoStatut(idx) {
   const p = state.projets[idx];
   if (!p) return;
-  if (p.statut === 'termine' || p.statut === 'sanssuite') return;
+  // Statuts manuels finaux — jamais écrasés par la logique de date
+  if (p.statut === 'termine' || p.statut === 'sanssuite' || p.statut === 'offreenvoyee') return;
 
   const ds = p.dateShooting ?? null;
   let newStatut;
   if (!ds) {
-    newStatut = 'brouillon';
+    // Sans date : garde offreacceptee si c'est le statut actuel, sinon brouillon
+    newStatut = p.statut === 'offreacceptee' ? 'offreacceptee' : 'brouillon';
   } else {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const shoot = new Date(ds); shoot.setHours(0, 0, 0, 0);
@@ -941,10 +1478,8 @@ function _openFABSheet() {
     save.projets();
 
     _closeSheet();
-    setTimeout(() => {
-      state.projetSubView = 'preparer';
-      navigateTo('projet');
-    }, 360);
+    // Après création : reste sur Studio (tap sur la carte pour ouvrir l'offre)
+    setTimeout(() => navigateTo('studio'), 360);
   });
 
   requestAnimationFrame(() => {
@@ -1016,7 +1551,7 @@ function _submitNewProject(e, preselectedClientId = null) {
     _closeSheet();
     // Re-render la sous-vue offre avec les nouvelles données
     setTimeout(() => {
-      state.projetSubView = 'preparer';
+      state.projetSubView = 'brief';
       _refreshProjetSubView();
     }, 360);
     return;
@@ -1270,33 +1805,43 @@ function _openContactSheet(editContact = null) {
   setTimeout(() => $('cfNom')?.focus(), 340);
 }
 
-function _viewProjet() {
-  if (!state.projets.length) {
+// Projets éligibles au module Terrain (offre acceptée = projet en cours)
+function _projetsTerrain() {
+  return state.projets.filter(p =>
+    ['offreacceptee', 'avenir', 'encours', 'atraiter'].includes(p.statut)
+  );
+}
+
+function _viewTerrain() {
+  const projets = _projetsTerrain();
+
+  if (!projets.length) {
     return `
       <div class="projet-empty">
-        ${_ico_folder_lg()}
-        <p class="empty-title">Aucun projet</p>
-        <p class="empty-sub">Crée un projet depuis Studio<br>pour construire ton offre.</p>
-        <button class="btn-action" id="btnGoCreateProjet" type="button">
-          Créer un projet
+        ${_ico_camera_lg()}
+        <p class="empty-title">Aucun projet en cours.</p>
+        <p class="empty-sub">Accepte une offre depuis Studio<br>pour commencer.</p>
+        <button class="btn-action" id="btnGoStudio" type="button">
+          Aller à Studio
         </button>
       </div>`;
   }
 
-  // Initialiser ou valider l'activeProjetId
-  if (!state.activeProjetId || !state.projets.find(p => p.id === state.activeProjetId)) {
-    state.activeProjetId = state.projets[0].id;
+  // Sélectionner le projet actif parmi les projets Terrain
+  if (!state.activeProjetId || !projets.find(p => p.id === state.activeProjetId)) {
+    state.activeProjetId = projets[0].id;
   }
 
-  const projet   = state.projets.find(p => p.id === state.activeProjetId);
-  const subViews = ['preparer', 'temps', 'frais', 'bilan'];
+  const projet   = projets.find(p => p.id === state.activeProjetId);
+  const subViews = ['brief', 'chrono', 'frais', 'bilan'];
+  const subLabels = { brief:'Brief', chrono:'Chrono', frais:'Frais', bilan:'Bilan' };
 
   return `
     <div class="projet-module">
 
       <!-- Carrousel chips projet -->
       <div class="projet-chips-scroll" id="projetChips">
-        ${state.projets.map(p => `
+        ${projets.map(p => `
           <button class="projet-chip${p.id === state.activeProjetId ? ' is-active' : ''}"
             data-id="${p.id}" type="button">
             <span class="chip-nom">${_esc(p.nom)}</span>
@@ -1309,7 +1854,7 @@ function _viewProjet() {
         ${subViews.map(v => `
           <button class="projet-subtab${state.projetSubView === v ? ' is-active' : ''}"
             data-subview="${v}" type="button">
-            ${{ preparer:'Préparer', temps:'Temps', frais:'Frais', bilan:'Bilan' }[v] ?? v}
+            ${subLabels[v] ?? v}
           </button>`).join('')}
       </div>
 
@@ -1321,9 +1866,20 @@ function _viewProjet() {
     </div>`;
 }
 
-// ─── Wiring module Projet ─────────────────────────────
+// Alias rétro-compat (utilisé dans quelques endroits encore)
+function _viewProjet() { return _viewTerrain(); }
 
-function _wireProjet() {
+// ─── Wiring module Terrain ────────────────────────────
+
+function _wireTerrain() {
+  $('btnGoStudio')?.addEventListener('click', () => navigateTo('studio'));
+  _wireTerrainCore();
+}
+
+// Alias rétro-compat
+function _wireProjet() { _wireTerrain(); }
+
+function _wireTerrainCore() {
   // État vide → créer un projet
   $('btnGoCreateProjet')?.addEventListener('click', () => {
     navigateTo('studio');
@@ -1381,23 +1937,38 @@ function _refreshProjetSubView() {
 }
 
 function _renderProjetSubView(sv, projet) {
+  _removeChronoFAB(); // toujours nettoyer avant de rendre une sous-vue
   switch (sv) {
+    case 'brief':    return _subviewPreparer(projet); // Phase 3 remplacera par _subviewBrief
+    case 'chrono':   return _subviewTemps(projet);    // Phase 4 remplacera par _subviewChrono
     case 'preparer': return _subviewPreparer(projet);
-    case 'temps':  return _subviewTemps(projet);
-    case 'frais':  return _subviewFrais(projet);
-    case 'bilan':  return _subviewBilan(projet);
-    default:       return '';
+    case 'temps':    return _subviewTemps(projet);
+    case 'frais':    return _subviewFrais(projet);
+    case 'bilan':    return _subviewBilan(projet);
+    default:         return '';
   }
 }
 
 function _wireProjetSubView(sv, projet) {
-  if (sv === 'preparer') _wirePreparer(projet);
-  if (sv === 'temps')  _wireTemps(projet);
+  if (sv === 'brief' || sv === 'preparer') _wirePreparer(projet);
+  if (sv === 'chrono' || sv === 'temps') _wireTemps(projet);
   if (sv === 'frais')  _wireFrais(projet);
   if (sv === 'bilan')  _wireBilan(projet);
 }
 
 function _wireBilan(projet) {
+  // Stagger d'entrée sur les cards
+  document.querySelectorAll('[data-bilan-card]').forEach(card => {
+    const idx = Number(card.dataset.bilanCard);
+    card.style.opacity   = '0';
+    card.style.transform = 'translateY(14px)';
+    setTimeout(() => {
+      card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      card.style.opacity    = '1';
+      card.style.transform  = 'translateY(0)';
+    }, idx * 100);
+  });
+
   // Photos livrées — auto-save + refresh badge
   $('photosLivreesInput')?.addEventListener('input', e => {
     const val = Number(e.target.value) || null;
@@ -1422,49 +1993,230 @@ function _wireBilan(projet) {
 }
 
 function _showClotureOverlay(projet) {
-  // Calcul perf
-  const prixFacture = Number(projet.prixFacture) || 0;
-  const totalMin    = (projet.sessions ?? []).reduce((s, x) => s + (Number(x.duree) || 0), 0);
-  const tauxReel    = totalMin > 0 && prixFacture > 0
-    ? Math.round(prixFacture / (totalMin / 60)) : null;
+  // ── Données ──
+  const prixFacture  = Number(projet.prixFacture) || 0;
+  const totalFraisR  = (projet.frais ?? []).reduce((s, f) => s + (Number(f.montant) || 0), 0);
+  const netEncaisse  = prixFacture - totalFraisR;
+  const totalMin     = (projet.sessions ?? []).reduce((s, x) => s + (Number(x.duree) || 0), 0);
+  const tempsReel    = totalMin / 60;
+  const tempsEstime  = _totalQuotaH(projet);
+  const deltaH       = tempsEstime > 0 ? +(tempsReel - tempsEstime).toFixed(1) : null;
+  const tauxReel     = tempsReel > 0 && prixFacture > 0
+    ? Math.round(prixFacture / tempsReel) : null;
+  const photosCmd    = Number(projet.photosCommandees) || 0;
+  const photosLiv    = Number(projet.photosLivrees)    || 0;
+  const prixParPhoto = photosCmd > 0 && prixFacture > 0
+    ? Math.round(prixFacture / photosCmd) : null;
 
-  let verdictIcon, verdictText, verdictCls;
+  // ── Performance ──
+  let perf;
   if (tauxReel === null || !hasTaux()) {
-    verdictIcon = '✓'; verdictText = 'Projet clôturé !'; verdictCls = 'is-neutral';
+    perf = { color: 'rgba(255,255,255,0.6)', label: 'Projet clôturé', deltaStr: '', isProfit: false };
   } else {
     const { tauxPlancher, tauxCible } = state.user;
     if (tauxReel >= tauxCible) {
-      verdictIcon = '🎉'; verdictText = 'Projet rentable !'; verdictCls = 'is-profit';
+      const d = Math.round((tauxReel - tauxCible) / tauxCible * 100);
+      perf = { color: '#5AAE82', label: 'Projet rentable', deltaStr: `+${d}% vs cible`, isProfit: true };
     } else if (tauxReel >= tauxPlancher) {
-      verdictIcon = '👍'; verdictText = 'Marge correcte'; verdictCls = 'is-warn';
+      perf = { color: '#F59332', label: 'Dans les clous', deltaStr: 'Taux plancher atteint', isProfit: false };
     } else {
-      verdictIcon = '📉'; verdictText = 'Sous le plancher'; verdictCls = 'is-loss';
+      const d = Math.round((tauxReel - tauxCible) / tauxCible * 100);
+      perf = { color: '#E07878', label: 'Sous le plancher', deltaStr: `${d}% vs cible`, isProfit: false };
     }
   }
 
+  // ── Lignes des cards deploy ──
+  function _dcRow(label, val, cls = '') {
+    return `<div class="deploy-row">
+      <span>${label}</span>
+      <span class="deploy-val${cls ? ' ' + cls : ''}">${val}</span>
+    </div>`;
+  }
+
+  const dc1 = [
+    _dcRow('Net encaissé', prixFacture > 0 ? _fmtCHF(netEncaisse) : '—',
+      prixFacture > 0 ? (netEncaisse >= 0 ? 'green' : 'red') : ''),
+    hasTaux() && tauxReel !== null && perf.deltaStr
+      ? _dcRow('vs taux cible', perf.deltaStr,
+          perf.isProfit ? 'green' : perf.color === '#F59332' ? 'orange' : 'red')
+      : '',
+  ].join('');
+
+  const deltaSign = deltaH === null ? '' : deltaH > 0 ? `+${deltaH}h` : `${deltaH}h`;
+  const dc2 = [
+    _dcRow('Estimé', tempsEstime > 0 ? _fmtH(tempsEstime) : '—'),
+    _dcRow('Réel',   tempsReel > 0 ? _fmtDuree(totalMin) : '—',
+      deltaH !== null ? (Math.abs(deltaH) < 0.1 ? 'green' : deltaH < 0 ? 'green' : 'orange') : ''),
+    deltaH !== null ? _dcRow('Delta', deltaSign || '±0h',
+      Math.abs(deltaH) < 0.1 ? 'green' : deltaH < 0 ? 'green' : 'orange') : '',
+  ].join('');
+
+  const hasDc3 = photosCmd > 0 || photosLiv > 0 || prixParPhoto !== null;
+  const dc3 = hasDc3 ? [
+    photosCmd > 0 ? _dcRow('Commandées', photosCmd) : '',
+    photosLiv > 0 ? _dcRow('Livrées', photosLiv,
+      photosCmd > 0 ? (photosLiv >= photosCmd ? 'green' : 'orange') : '') : '',
+    prixParPhoto  ? _dcRow('CHF / photo', `${prixParPhoto} CHF`, 'green') : '',
+  ].join('') : '';
+
+  // ── HTML overlay ──
   const overlay = document.createElement('div');
+  overlay.id        = 'clotureOverlay';
   overlay.className = 'cloture-overlay';
   overlay.innerHTML = `
-    <div class="cloture-card">
-      <div class="cloture-check">${verdictIcon}</div>
-      <p class="cloture-titre">${_esc(projet.nom)}</p>
-      ${tauxReel !== null
-        ? `<p class="cloture-taux">${tauxReel} CHF/h réel</p>`
-        : ''}
-      <p class="cloture-verdict ${verdictCls}">${verdictText}</p>
+    <div class="confetti-container" id="clotureConfetti"></div>
+
+    <div class="phase-countdown" id="cloturePhase1">
+      <div class="countdown-ring">
+        <svg width="100" height="100" viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="42" fill="none"
+            stroke="rgba(255,255,255,0.08)" stroke-width="6"/>
+          <circle id="arcCd" cx="50" cy="50" r="42" fill="none"
+            stroke="#F59332" stroke-width="6" stroke-linecap="round"
+            stroke-dasharray="264" stroke-dashoffset="264"
+            transform="rotate(-90 50 50)"/>
+        </svg>
+        <div class="countdown-num" id="clotureNum">3</div>
+      </div>
+      <p class="countdown-label">Calcul en cours…</p>
+    </div>
+
+    <div class="phase-reveal" id="cloturePhase2">
+      <div class="reveal-num" id="revealNum">${tauxReel !== null ? '0' : '—'}</div>
+      <div class="reveal-unit">CHF/h réel</div>
+      <div class="reveal-verdict" id="revealVerdict"></div>
+    </div>
+
+    <div class="phase-deploy" id="cloturePhase3">
+      <div class="deploy-taux">
+        <div class="deploy-taux-num" id="deployTauxNum" style="color:${perf.color}">
+          ${tauxReel !== null ? tauxReel + ' CHF/h' : '—'}
+        </div>
+        <div class="deploy-taux-label">${perf.label}</div>
+      </div>
+      <div class="deploy-card" id="cdc1">
+        <div class="deploy-card-label">Financier</div>
+        ${dc1}
+      </div>
+      <div class="deploy-card" id="cdc2">
+        <div class="deploy-card-label">Temps</div>
+        ${dc2}
+      </div>
+      ${hasDc3 ? `<div class="deploy-card" id="cdc3">
+        <div class="deploy-card-label">Livrables</div>
+        ${dc3}
+      </div>` : ''}
+      <button class="btn-retour-studio" id="btnClotureRetour" type="button">
+        Retour Studio
+      </button>
     </div>`;
 
   document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('is-visible'));
 
-  // fadeOut puis navigateTo studio
+  // ── Phase 1 : arc se remplit + décompte 3→2→1 ──
+  let count = 3;
+  let arcProgress = 0;
+  const ARC_TOTAL      = 264;
+  const TICK_MS        = 50;
+  const TICKS_PER_SEC  = 1000 / TICK_MS;
+
+  const arcInterval = setInterval(() => {
+    arcProgress += ARC_TOTAL / (3 * TICKS_PER_SEC);
+    const arcEl = document.getElementById('arcCd');
+    if (arcEl) arcEl.setAttribute('stroke-dashoffset',
+      String(ARC_TOTAL - Math.min(arcProgress, ARC_TOTAL)));
+  }, TICK_MS);
+
+  const cdInterval = setInterval(() => {
+    count--;
+    const cdEl = document.getElementById('clotureNum');
+    if (count > 0) {
+      if (cdEl) cdEl.textContent = count;
+    } else {
+      clearInterval(cdInterval);
+      clearInterval(arcInterval);
+
+      // ── Phase 2 : révélation du taux ──
+      const ph1 = document.getElementById('cloturePhase1');
+      const ph2 = document.getElementById('cloturePhase2');
+      if (ph1) ph1.style.display = 'none';
+      if (ph2) ph2.style.display = 'block';
+
+      if (tauxReel !== null) {
+        _animateTauxCounter('revealNum', tauxReel, 1200, () => {
+          const rnEl = document.getElementById('revealNum');
+          const rvEl = document.getElementById('revealVerdict');
+          if (rnEl) rnEl.style.color = perf.color;
+          if (rvEl) {
+            rvEl.textContent = perf.label + (perf.deltaStr ? ' · ' + perf.deltaStr : '');
+            rvEl.style.color = perf.color;
+            rvEl.classList.add('visible');
+          }
+          if (perf.isProfit) _spawnConfetti();
+          _showDeployPhase(overlay, hasDc3);
+        });
+      } else {
+        setTimeout(() => _showDeployPhase(overlay, hasDc3), 600);
+      }
+    }
+  }, 1000);
+}
+
+function _spawnConfetti() {
+  const container  = document.getElementById('clotureConfetti');
+  if (!container) return;
+  const colors     = ['#F59332','#5AAE82','#f0f4f8','#3A7ABF','#E09050'];
+  const animations = ['confetto-fall-0','confetto-fall-1','confetto-fall-2'];
+  for (let i = 0; i < 40; i++) {
+    const el = document.createElement('div');
+    el.className = 'confetto';
+    el.style.cssText = [
+      `left:${(Math.random()*100).toFixed(1)}%`,
+      `background:${colors[Math.floor(Math.random()*colors.length)]}`,
+      `transform:rotate(${Math.floor(Math.random()*360)}deg)`,
+      `animation:${animations[i%3]} ${(0.8+Math.random()*1.2).toFixed(2)}s ${(Math.random()*0.8).toFixed(2)}s ease-in forwards`,
+    ].join(';');
+    container.appendChild(el);
+  }
+}
+
+function _showDeployPhase(overlay, hasDc3) {
   setTimeout(() => {
-    overlay.style.transition = 'opacity .5s ease';
-    overlay.style.opacity    = '0';
-  }, 2000);
-  setTimeout(() => {
-    overlay.remove();
-    navigateTo('studio');
-  }, 2500);
+    const ph2 = document.getElementById('cloturePhase2');
+    const ph3 = document.getElementById('cloturePhase3');
+    if (ph2) ph2.style.display = 'none';
+    if (ph3) ph3.style.display = 'block';
+
+    const cardIds = ['cdc1','cdc2', hasDc3 ? 'cdc3' : null].filter(Boolean);
+    cardIds.forEach((id, i) => {
+      setTimeout(() => document.getElementById(id)?.classList.add('visible'), i * 100);
+    });
+
+    setTimeout(() => {
+      document.getElementById('btnClotureRetour')?.classList.add('visible');
+    }, cardIds.length * 100 + 200);
+
+    document.getElementById('btnClotureRetour')?.addEventListener('click', () => {
+      overlay.style.transition = 'opacity 0.35s ease';
+      overlay.style.opacity    = '0';
+      setTimeout(() => { overlay.remove(); navigateTo('studio'); }, 370);
+    });
+  }, 1800);
+}
+
+function _animateTauxCounter(elId, target, duration, onDone) {
+  const el = document.getElementById(elId);
+  if (!el || target <= 0) { if (onDone) onDone(); return; }
+  const startTime = performance.now();
+  function frame(now) {
+    const t    = Math.min(1, (now - startTime) / duration);
+    const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    el.textContent = String(Math.round(target * ease));
+    if (t < 1) requestAnimationFrame(frame);
+    else { el.textContent = String(target); if (onDone) onDone(); }
+  }
+  requestAnimationFrame(frame);
 }
 
 // ════════════════════════════════════════════════════════
@@ -1538,7 +2290,9 @@ function _subviewPreparer(projet) {
     ['revisions','Révisions'],
   ];
 
-  const shotsHtml = (fr.shots ?? []).map(s => `
+  // Shots triés : non cochés en premier
+  const sortedShots = [...(fr.shots ?? [])].sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0));
+  const shotsHtml = sortedShots.map(s => `
     <div class="shot-row" data-shot-id="${s.id}">
       <input type="checkbox" class="shot-check" data-shot-id="${s.id}"
         ${s.done ? 'checked' : ''} />
@@ -1613,7 +2367,55 @@ function _subviewPreparer(projet) {
         </div>
       </div>
 
-      <!-- ── 4. Feuille de route (accordéon, déplié par défaut) ── -->
+      <!-- ── 4. Offre (accordéon, lecture seule) ── -->
+      ${(() => {
+        const hasPrix = Number(projet.prixFacture) > 0;
+        const droitsLabel = DROITS_OPTIONS.find(o => o.key === (projet.droitsUtilisation ?? 'aucun'))?.label ?? '—';
+        const totalFraisOff = _calcTotalFraisEstimes(projet);
+        const acompteVal = hasPrix && projet.acompte
+          ? _fmtCHF(Math.round(Number(projet.prixFacture) * Number(projet.acompte) / 100))
+          : null;
+        return `
+      <div class="accordion glass-card" data-acc="offre">
+        <button class="accordion-header" type="button" aria-expanded="false" data-acc-btn="offre">
+          <span class="accordion-title">Offre acceptée</span>
+          <span class="accordion-badge">${hasPrix ? _fmtCHF(Number(projet.prixFacture)) : '—'}</span>
+          <svg class="accordion-chevron" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+        <div class="accordion-body is-closed" data-acc-body="offre">
+          <dl class="offre-recap-list">
+            ${hasPrix ? `<div class="offre-recap-row">
+              <dt>Prix</dt><dd>${_fmtCHF(Number(projet.prixFacture))}</dd>
+            </div>` : ''}
+            ${projet.photosCommandees ? `<div class="offre-recap-row">
+              <dt>Photos</dt><dd>${projet.photosCommandees}</dd>
+            </div>` : ''}
+            ${projet.videosCommandees ? `<div class="offre-recap-row">
+              <dt>Vidéos</dt><dd>${projet.videosCommandees}</dd>
+            </div>` : ''}
+            ${projet.roundsRevisions ? `<div class="offre-recap-row">
+              <dt>Retouches</dt><dd>${projet.roundsRevisions} round${projet.roundsRevisions > 1 ? 's' : ''}</dd>
+            </div>` : ''}
+            ${projet.delaiLivraison ? `<div class="offre-recap-row">
+              <dt>Livraison</dt><dd>${projet.delaiLivraison} j</dd>
+            </div>` : ''}
+            ${projet.droitsUtilisation && projet.droitsUtilisation !== 'aucun' ? `<div class="offre-recap-row">
+              <dt>Droits</dt><dd>${droitsLabel}</dd>
+            </div>` : ''}
+            ${totalFraisOff > 0 ? `<div class="offre-recap-row">
+              <dt>Frais estimés</dt><dd>${_fmtCHF(totalFraisOff)}</dd>
+            </div>` : ''}
+            ${acompteVal ? `<div class="offre-recap-row">
+              <dt>Acompte ${projet.acompte} %</dt><dd>${acompteVal}</dd>
+            </div>` : ''}
+          </dl>
+        </div>
+      </div>`; })()}
+
+      <!-- ── 5. Feuille de route (accordéon, déplié par défaut) ── -->
       <div class="accordion glass-card" data-acc="feuille">
         <button class="accordion-header" type="button" aria-expanded="true" data-acc-btn="feuille">
           <span class="accordion-title">Feuille de route</span>
@@ -1623,30 +2425,51 @@ function _subviewPreparer(projet) {
           </svg>
         </button>
         <div class="accordion-body" data-acc-body="feuille">
-          <label for="frContact">
-            Contact client
-            <input id="frContact" type="text"
-              placeholder="Nom · +41 79 000 00 00"
+          <label for="frNomContact">Contact client
+            <input id="frNomContact" type="text"
+              placeholder="Prénom Nom"
               autocomplete="off"
               value="${_esc(fr.contact ?? '')}" />
           </label>
-          <label for="frLieu">
-            Lieu
+          <div class="form-row">
+            <div class="fr-contact-field">
+              <label for="frTel">Téléphone
+                <input id="frTel" type="tel"
+                  placeholder="+41 79 000 00 00"
+                  autocomplete="tel"
+                  value="${_esc(fr.telephone ?? '')}" />
+              </label>
+              ${fr.telephone ? `<a class="fr-action-link" id="frTelLink"
+                href="tel:${_esc(fr.telephone.replace(/\s/g,''))}">📞 Appeler</a>` : ''}
+            </div>
+            <div class="fr-contact-field">
+              <label for="frEmail">Email
+                <input id="frEmail" type="email"
+                  placeholder="client@exemple.com"
+                  autocomplete="email"
+                  value="${_esc(fr.email ?? '')}" />
+              </label>
+              ${fr.email ? `<a class="fr-action-link" id="frEmailLink"
+                href="mailto:${_esc(fr.email)}">✉️ Écrire</a>` : ''}
+            </div>
+          </div>
+          <label for="frLieu">Lieu
             <input id="frLieu" type="text"
               placeholder="Adresse ou lieu"
               autocomplete="off"
               value="${_esc(fr.lieu ?? '')}" />
+            ${fr.lieu ? `<a class="fr-action-link" href="https://maps.apple.com/?q=${encodeURIComponent(fr.lieu)}"
+              target="_blank" rel="noopener">🗺 Ouvrir Maps</a>` : ''}
           </label>
-          <label for="frNotes">
-            Notes
+          <label for="frNotes">Notes terrain
             <textarea id="frNotes" rows="3"
-              placeholder="Ambiance, style, contraintes…"
+              placeholder="Ambiance, style, contraintes, parking…"
               style="resize:vertical;">${_esc(fr.notes ?? '')}</textarea>
           </label>
         </div>
       </div>
 
-      <!-- ── 5. Plan de shots (accordéon) ── -->
+      <!-- ── 6. Plan de shots (accordéon) ── -->
       <div class="accordion glass-card" data-acc="shots">
         <button class="accordion-header" type="button" aria-expanded="false" data-acc-btn="shots">
           <span class="accordion-title">Plan de shots</span>
@@ -1667,7 +2490,7 @@ function _subviewPreparer(projet) {
         </div>
       </div>
 
-      <!-- ── 6. Matériel (accordéon) ── -->
+      <!-- ── 7. Matériel (accordéon) ── -->
       <div class="accordion glass-card" data-acc="materiel">
         <button class="accordion-header" type="button" aria-expanded="false" data-acc-btn="materiel">
           <span class="accordion-title">Matériel</span>
@@ -1681,17 +2504,7 @@ function _subviewPreparer(projet) {
         </div>
       </div>
 
-      <!-- ── 6. Actions offre ── -->
-      ${(projet.statut !== 'encours' && projet.statut !== 'termine' && projet.statut !== 'sanssuite')
-        ? `<button class="btn-action" id="btnEnvoyerOffre" type="button">
-            Offre envoyée →
-          </button>
-          <button class="btn-text-muted" id="btnSansSuiteOffre" type="button">
-            Marquer sans suite
-          </button>`
-        : `<button class="btn-action" id="btnStartChrono" type="button">
-            Démarrer le chrono →
-          </button>`}
+      <!-- ── 8. Action : FAB injecté par _wirePreparer ── -->
 
     </div>`;
 }
@@ -1760,20 +2573,85 @@ function _wirePreparer(projet) {
 
   // Checklist matériel
   _wireChecklistSection(projet);
-  $('btnGoToProfil')?.addEventListener('click', () => navigateTo('profil'));
+  $('btnGoToProfil')?.addEventListener('click', () => navigateTo('moi'));
 
   // Feuille de route — auto-save
   const _saveFR = () => {
     const idx = state.projets.findIndex(p => p.id === projet.id);
     if (idx === -1) return;
     if (!state.projets[idx].feuilleRoute)
-      state.projets[idx].feuilleRoute = { contact:'', lieu:'', notes:'', shots:[] };
-    state.projets[idx].feuilleRoute.contact = $('frContact')?.value ?? '';
-    state.projets[idx].feuilleRoute.lieu    = $('frLieu')?.value    ?? '';
-    state.projets[idx].feuilleRoute.notes   = $('frNotes')?.value   ?? '';
+      state.projets[idx].feuilleRoute = { contact:'', telephone:'', email:'', lieu:'', notes:'', shots:[] };
+    state.projets[idx].feuilleRoute.contact   = $('frNomContact')?.value ?? '';
+    state.projets[idx].feuilleRoute.telephone = $('frTel')?.value        ?? '';
+    state.projets[idx].feuilleRoute.email     = $('frEmail')?.value      ?? '';
+    state.projets[idx].feuilleRoute.lieu      = $('frLieu')?.value       ?? '';
+    state.projets[idx].feuilleRoute.notes     = $('frNotes')?.value      ?? '';
     save.projets();
   };
-  ['frContact','frLieu','frNotes'].forEach(id => $(id)?.addEventListener('input', _saveFR));
+  ['frNomContact','frNotes'].forEach(id => $(id)?.addEventListener('input', _saveFR));
+
+  // Lieu : save + lien Maps live
+  $('frLieu')?.addEventListener('input', e => {
+    _saveFR();
+    const val  = e.target.value.trim();
+    const wrap = e.target.closest('label');
+    if (!wrap) return;
+    let link = wrap.querySelector('.fr-action-link');
+    if (val) {
+      if (!link) {
+        link = document.createElement('a');
+        link.className = 'fr-action-link';
+        link.target    = '_blank';
+        link.rel       = 'noopener';
+        wrap.appendChild(link);
+      }
+      link.href        = `https://maps.apple.com/?q=${encodeURIComponent(val)}`;
+      link.textContent = '🗺 Ouvrir Maps';
+    } else {
+      link?.remove();
+    }
+  });
+
+  // Tel/email : save + mise à jour live du lien cliquable
+  $('frTel')?.addEventListener('input', e => {
+    _saveFR();
+    const val  = e.target.value.trim();
+    const wrap = e.target.closest('.fr-contact-field');
+    if (!wrap) return;
+    let link = wrap.querySelector('.fr-action-link');
+    if (val) {
+      if (!link) {
+        link = document.createElement('a');
+        link.className = 'fr-action-link';
+        link.id = 'frTelLink';
+        wrap.appendChild(link);
+      }
+      link.href        = `tel:${val.replace(/\s/g,'')}`;
+      link.textContent = '📞 Appeler';
+    } else {
+      link?.remove();
+    }
+  });
+
+  $('frEmail')?.addEventListener('input', e => {
+    _saveFR();
+    const val  = e.target.value.trim();
+    const wrap = e.target.closest('.fr-contact-field');
+    if (!wrap) return;
+    let link = wrap.querySelector('.fr-action-link');
+    if (val) {
+      if (!link) {
+        link = document.createElement('a');
+        link.className = 'fr-action-link';
+        link.id = 'frEmailLink';
+        wrap.appendChild(link);
+      }
+      link.href        = `mailto:${val}`;
+      link.textContent = '✉️ Écrire';
+    } else {
+      link?.remove();
+    }
+  });
 
   // Shots — ajouter
   const doAddShot = () => {
@@ -1797,27 +2675,8 @@ function _wirePreparer(projet) {
   // Shots — check/uncheck + supprimer
   _wireShotsListeners(projet);
 
-  // Actions
-  $('btnEnvoyerOffre')?.addEventListener('click', () => {
-    const idx = state.projets.findIndex(p => p.id === projet.id);
-    if (idx !== -1) { state.projets[idx].statut = 'attente'; save.projets(); }
-    const btn = $('btnEnvoyerOffre');
-    if (btn) { btn.textContent='Offre envoyée ✓'; btn.disabled=true; btn.style.opacity='.7'; }
-    setTimeout(() => navigateTo('studio'), 1200);
-  });
-  $('btnSansSuiteOffre')?.addEventListener('click', () => {
-    if (!confirm(`Marquer "${projet.nom}" sans suite ?`)) return;
-    const idx = state.projets.findIndex(p => p.id === projet.id);
-    if (idx !== -1) { state.projets[idx].statut = 'sanssuite'; save.projets(); }
-    navigateTo('studio');
-  });
-  $('btnStartChrono')?.addEventListener('click', () => {
-    state.projetSubView = 'temps';
-    document.querySelectorAll('[data-subview]').forEach(b =>
-      b.classList.toggle('is-active', b.dataset.subview === 'temps')
-    );
-    _refreshProjetSubView();
-  });
+  // FAB flottant "Chrono" — visible uniquement si le timer ne tourne pas
+  _injectChronoFAB(projet);
 }
 
 function _wireShotsListeners(projet) {
@@ -1852,7 +2711,9 @@ function _refreshShotsList(projet) {
   const el = $('shotsList');
   if (!el) return;
   const fr = projet.feuilleRoute ?? { shots:[] };
-  el.innerHTML = (fr.shots ?? []).map(s => `
+  // Tri : non cochés en premier
+  const sorted = [...(fr.shots ?? [])].sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0));
+  el.innerHTML = sorted.map(s => `
     <div class="shot-row" data-shot-id="${s.id}">
       <input type="checkbox" class="shot-check" data-shot-id="${s.id}" ${s.done?'checked':''} />
       <span class="shot-label${s.done?' is-done':''}">${_esc(s.label)}</span>
@@ -1911,40 +2772,161 @@ function _onQuotaChange(projet, cats = ['admin', 'prepa', 'shooting', 'trajet', 
 // SOUS-VUE TEMPS — Phase 6
 // ════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════
+// CHRONO — helpers Phase 4
+// ════════════════════════════════════════════════════════
+
+const _RING_C = 2 * Math.PI * 80; // ≈ 502.65 — circonférence du ring r=80
+
+// Fonds chrono — variations subtiles bleu foncé uniquement (pas les couleurs vives des catégories)
+const CHRONO_BG = {
+  admin:     'rgba(20,45,80,.07)',
+  prepa:     'rgba(20,40,75,.09)',
+  shooting:  'rgba(15,45,90,.10)',
+  trajet:    'rgba(25,50,80,.08)',
+  edition:   'rgba(20,50,75,.09)',
+  revisions: 'rgba(25,45,85,.11)',
+};
+
+function _ringOffset(projet) {
+  const quotaMin = Math.round((Number(projet?.quotas?.[_timerCat]) || 0) * 60);
+  if (!quotaMin) return _RING_C;
+  const sessionsMin = (projet?.sessions ?? [])
+    .filter(s => s.categorie === _timerCat)
+    .reduce((sum, s) => sum + (Number(s.duree) || 0), 0);
+  const liveMin = _timerInterval ? Math.floor(_timerSeconds / 60) : 0;
+  return _RING_C * (1 - Math.min(1, (sessionsMin + liveMin) / quotaMin));
+}
+
+function _renderChronoRing(projet) {
+  const cat    = CATEGORIES[_timerCat] ?? { color: '#D4700A' };
+  const offset = _ringOffset(projet);
+  return `
+    <svg class="chrono-ring" viewBox="0 0 200 200" aria-hidden="true">
+      <circle class="chrono-ring-track" cx="100" cy="100" r="80"/>
+      <circle id="chronoRingFill" class="chrono-ring-fill"
+        cx="100" cy="100" r="80"
+        stroke="${cat.color}"
+        stroke-dasharray="${_RING_C.toFixed(2)}"
+        stroke-dashoffset="${offset.toFixed(2)}"
+        transform="rotate(-90 100 100)"/>
+    </svg>`;
+}
+
+function _updateChronoRing(projet) {
+  const el = $('chronoRingFill');
+  if (!el) return;
+  const cat = CATEGORIES[_timerCat] ?? { color: '#D4700A' };
+  el.style.stroke = cat.color;
+  el.setAttribute('stroke-dashoffset', _ringOffset(projet).toFixed(2));
+}
+
+function _renderCatGrid(projet, activeCat) {
+  const effMin = {};
+  (projet.sessions ?? []).forEach(s => {
+    effMin[s.categorie] = (effMin[s.categorie] ?? 0) + (Number(s.duree) || 0);
+  });
+  return Object.entries(CATEGORIES).map(([key, cat]) => {
+    const quotaMin  = Math.round((Number(projet.quotas?.[key]) || 0) * 60);
+    const eff       = effMin[key] ?? 0;
+    const pct       = quotaMin > 0 ? Math.min(100, Math.round(eff / quotaMin * 100)) : 0;
+    const isActive  = key === activeCat;
+    const fillColor = pct >= 100 ? '#E07878' : pct >= 80 ? '#E09050' : cat.color;
+    return `
+      <button class="cat-grid-cell${isActive ? ' is-active' : ''}"
+        data-cat="${key}" type="button"
+        style="${isActive
+          ? `border-color:${cat.color};background:${cat.bg};`
+          : ''}">
+        <span class="cat-grid-label">${cat.label}</span>
+        <div class="cat-grid-bar-wrap">
+          <div class="cat-grid-bar-fill"
+            style="width:${pct}%;background:${fillColor};"></div>
+        </div>
+      </button>`;
+  }).join('');
+}
+
+function _wireCatGrid(projet) {
+  document.querySelectorAll('.cat-grid-cell').forEach(cell =>
+    cell.addEventListener('click', e => {
+      const cat = e.currentTarget.dataset.cat;
+      if (!cat) return;
+      _timerCat = cat;
+      _refreshCatGrid(projet);
+      _updateChronoRing(projet);
+      _updateChronoBg();
+      if (_timerInterval) _updateChronoStatus();
+    })
+  );
+}
+
+function _refreshCatGrid(projet) {
+  const el = $('catGrid');
+  if (el) { el.innerHTML = _renderCatGrid(projet, _timerCat); _wireCatGrid(projet); }
+}
+
+function _updateChronoBg() {
+  const view = document.querySelector('.temps-view');
+  if (!view) return;
+  view.style.background = _timerInterval ? (CHRONO_BG[_timerCat] ?? '') : '';
+}
+
+function _injectChronoFAB(projet) {
+  _removeChronoFAB();
+  if (_timerInterval) return;
+  const fab = document.createElement('button');
+  fab.id        = 'fabChrono';
+  fab.className = 'fab-chrono';
+  fab.type      = 'button';
+  fab.setAttribute('aria-label', 'Démarrer le chrono');
+  fab.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16"
+    fill="currentColor" aria-hidden="true">
+    <polygon points="5,3 19,12 5,21"/>
+  </svg>Chrono`;
+  fab.addEventListener('click', () => {
+    _removeChronoFAB();
+    state.projetSubView = 'chrono';
+    document.querySelectorAll('[data-subview]').forEach(b =>
+      b.classList.toggle('is-active', b.dataset.subview === 'chrono')
+    );
+    _refreshProjetSubView();
+  });
+  document.body.appendChild(fab);
+}
+
+function _removeChronoFAB() { $('fabChrono')?.remove(); }
+
 function _subviewTemps(projet) {
   return `
     <div class="temps-view">
 
-      <!-- 1. Chrono -->
-      <div class="glass-card chrono-card">
-        <p class="chrono-status" id="chronoStatus">Prêt</p>
-        <p class="chrono-display" id="chronoDisplay">00:00:00</p>
-        <p class="chrono-sub" id="chronoSub"></p>
+      <!-- 1. Ring + Timer -->
+      <div class="chrono-ring-wrap">
+        ${_renderChronoRing(projet)}
+        <div class="chrono-center">
+          <p class="chrono-status" id="chronoStatus">Prêt</p>
+          <p class="chrono-display" id="chronoDisplay">00:00:00</p>
+          <p class="chrono-sub" id="chronoSub"></p>
+        </div>
       </div>
 
       <!-- 2. Boutons -->
       <div class="chrono-actions">
         <button class="btn-action" id="btnToggleChrono" type="button">
-          Démarrer
+          ${_timerInterval ? 'Arrêter' : 'Démarrer'}
         </button>
         <button class="btn-secondary" id="btnManuelTime" type="button">
-          ${_ico_clock_plus()}
-          Manuel
+          ${_ico_clock_plus()} Manuel
         </button>
       </div>
 
-      <!-- 3. Chips catégories -->
-      <div class="cat-chips-scroll" id="catChips">
-        ${_renderCatChips(_timerCat)}
+      <!-- 3. Grille catégories 2×3 -->
+      <div class="cat-grid" id="catGrid">
+        ${_renderCatGrid(projet, _timerCat)}
       </div>
 
-      <!-- 4. Barres de progression quotas -->
-      <div class="quota-bars" id="quotaBars">
-        <p class="quota-bars-title">Quotas</p>
-        ${_renderQuotaBars(projet)}
-      </div>
-
-      <!-- 5. Stats + Sessions -->
+      <!-- 4. Stats -->
       <div class="chrono-stats">
         <div class="glass-card stat-mini">
           <p class="stat-mini-label">Effectif</p>
@@ -1960,6 +2942,7 @@ function _subviewTemps(projet) {
         </div>
       </div>
 
+      <!-- 5. Sessions -->
       <div class="sessions-section">
         <div class="sessions-head">
           <p class="sessions-title">Sessions</p>
@@ -1976,7 +2959,7 @@ function _subviewTemps(projet) {
 }
 
 function _wireTemps(projet) {
-  _wireCatChips(projet);
+  _wireCatGrid(projet);
 
   $('btnToggleChrono')?.addEventListener('click', () => {
     if (_timerInterval) _stopChrono(projet);
@@ -1998,11 +2981,11 @@ function _wireTemps(projet) {
 
   _wireSessionDeletes(projet);
 
-  // Restaurer l'état si le chrono tourne déjà
+  // Restaurer l'état visuel si le chrono tourne déjà
   if (_timerInterval) {
-    const btn = $('btnToggleChrono');
-    if (btn) btn.textContent = 'Arrêter';
     _updateChronoStatus();
+    _updateChronoBg();
+    _updateChronoRing(projet);
     _tickTimer();
   }
 }
@@ -2079,6 +3062,7 @@ function _stopChrono(projet) {
     statusEl.style.color = '';
   }
 
+  _updateChronoBg(); // reset fond
   if (idx !== -1) _refreshTempsDisplay(state.projets[idx]);
 }
 
@@ -2090,12 +3074,13 @@ function _tickTimer() {
   const el = $('chronoDisplay');
   if (el) el.textContent = [h, m, s].map(n => String(n).padStart(2, '0')).join(':');
 
-  // Mise à jour des barres quota toutes les 5 secondes
+  // Ring : chaque seconde (résolution fluide)
+  const p = _activeProjet();
+  if (p) _updateChronoRing(p);
+
+  // Grille (re-render DOM) : toutes les 60 s suffit
   _tickBarCounter++;
-  if (_tickBarCounter % 5 === 0) {
-    const p = _activeProjet();
-    if (p) _updateQuotaBars(p);
-  }
+  if (_tickBarCounter % 60 === 0 && p) _refreshCatGrid(p);
 }
 
 function _updateChronoStatus() {
@@ -2108,9 +3093,12 @@ function _updateChronoStatus() {
     statusEl.style.color = cat.color;
   }
   if (subEl) subEl.textContent = 'Session en cours…';
+  _updateChronoBg();
 }
 
 function _refreshTempsDisplay(projet) {
+  _refreshCatGrid(projet);
+  _updateChronoRing(projet);
   const el = $('sessionsList');
   if (el) {
     el.innerHTML = _renderSessionsList(projet);
@@ -2376,19 +3364,80 @@ function _openManualTimeSheet(projet) {
 // SOUS-VUE FRAIS — Phase 7
 // ════════════════════════════════════════════════════════
 
+function _renderFraisComparison(projet) {
+  const FRAIS_CATS = [
+    ['deplacement', 'Déplacement'],
+    ['repas',       'Repas'],
+    ['hebergement', 'Hébergement'],
+    ['materiel',    'Matériel loué'],
+    ['autre',       'Autre'],
+  ];
+  const estimes = projet.fraisEstimes ?? {};
+  const reelByCat = {};
+  (projet.frais ?? []).forEach(f => {
+    const cat = f.categorie ?? 'autre';
+    reelByCat[cat] = (reelByCat[cat] ?? 0) + (Number(f.montant) || 0);
+  });
+
+  const totalEst  = Object.values(estimes).reduce((s, v) => s + (Number(v) || 0), 0);
+  const totalReel = (projet.frais ?? []).reduce((s, f) => s + (Number(f.montant) || 0), 0);
+  const delta     = totalReel - totalEst;
+
+  const rows = FRAIS_CATS.map(([key, label]) => {
+    const est = Number(estimes[key]) || 0;
+    const ree = reelByCat[key]      || 0;
+    if (est === 0 && ree === 0) return '';
+    const over = est > 0 && ree > est;
+    return `
+      <div class="frais-cmp-row">
+        <span class="frais-cmp-cat">${label}</span>
+        <span class="frais-cmp-est">${est > 0 ? _fmtCHF(est) : '—'}</span>
+        <span class="frais-cmp-reel${over ? ' is-over' : ''}">${ree > 0 ? _fmtCHF(ree) : '—'}</span>
+      </div>`;
+  }).filter(Boolean).join('');
+
+  const noCmp = totalEst === 0 && totalReel === 0;
+  if (noCmp) return '';
+
+  const deltaSign = delta > 0 ? '+' : '';
+  const deltaCls  = delta > 0 ? ' is-over' : delta < 0 ? ' is-under' : '';
+
+  return `
+    <div class="frais-cmp glass-card">
+      <div class="frais-cmp-head">
+        <span></span>
+        <span class="frais-cmp-col">Estimé</span>
+        <span class="frais-cmp-col">Réel</span>
+      </div>
+      ${rows}
+      <div class="frais-cmp-total">
+        <span>Total</span>
+        <span>${totalEst > 0 ? _fmtCHF(totalEst) : '—'}</span>
+        <span class="${deltaCls}">
+          ${totalReel > 0 ? _fmtCHF(totalReel) : '—'}
+          ${totalEst > 0 && totalReel > 0 && delta !== 0
+            ? `<small>${deltaSign}${_fmtCHF(Math.abs(delta))}</small>` : ''}
+        </span>
+      </div>
+    </div>`;
+}
+
 function _subviewFrais(projet) {
   const frais = projet.frais ?? [];
-  const total = frais.reduce((s, f) => s + (Number(f.montant) || 0), 0);
 
   const listHTML = frais.length
     ? `<div class="frais-list">
         ${[...frais].reverse().map(f => {
-          const d = new Date(f.date).toLocaleDateString('fr-CH', { day: 'numeric', month: 'short' });
+          const d   = new Date(f.date).toLocaleDateString('fr-CH', { day: 'numeric', month: 'short' });
+          const cat = f.categorie
+            ? ({ deplacement:'Dépl.', repas:'Repas', hebergement:'Héberg.',
+                 materiel:'Matériel', autre:'Autre' }[f.categorie] ?? f.categorie)
+            : '';
           return `
             <div class="frais-row">
               <div class="frais-info">
                 <div class="frais-label">${_esc(f.label)}</div>
-                <div class="frais-date">${d}</div>
+                <div class="frais-date">${d}${cat ? ` · ${cat}` : ''}</div>
               </div>
               <span class="frais-montant">${_fmtCHF(f.montant)}</span>
               <button class="frais-delete" data-frais-id="${f.id}"
@@ -2396,25 +3445,22 @@ function _subviewFrais(projet) {
             </div>`;
         }).join('')}
       </div>`
-    : `<div class="frais-empty">Aucun frais enregistré.</div>`;
+    : `<div class="frais-empty">Aucun frais réel enregistré.</div>`;
 
   return `
     <div class="frais-view">
 
-      <!-- Carte total -->
-      <div class="glass-card frais-total-card">
-        <p class="frais-total-label">Total frais</p>
-        <p class="frais-total-value">${total > 0 ? _fmtCHF(total) : '—'}</p>
-      </div>
+      <!-- Comparaison estimé / réel -->
+      ${_renderFraisComparison(projet)}
 
-      <!-- Liste -->
+      <!-- Liste frais réels -->
       <div class="glass-card" id="fraisList">
         ${listHTML}
       </div>
 
       <!-- CTA -->
       <button class="btn-action" id="btnAddFrais" type="button">
-        + Ajouter un frais
+        + Ajouter un frais réel
       </button>
 
     </div>`;
@@ -2473,12 +3519,24 @@ function _openFraisSheet(projet) {
           placeholder="Ex. Location véhicule"
           autocapitalize="sentences" autocomplete="off" />
       </label>
-      <label for="fraisMontantInput">
-        Montant (CHF)
-        <input id="fraisMontantInput" type="number"
-          min="0" step="0.01" placeholder="0.00"
-          inputmode="decimal" />
-      </label>
+      <div class="form-row">
+        <label for="fraisCatInput">
+          Catégorie
+          <select id="fraisCatInput">
+            <option value="deplacement">Déplacement</option>
+            <option value="repas">Repas</option>
+            <option value="hebergement">Hébergement</option>
+            <option value="materiel">Matériel loué</option>
+            <option value="autre" selected>Autre</option>
+          </select>
+        </label>
+        <label for="fraisMontantInput">
+          Montant (CHF)
+          <input id="fraisMontantInput" type="number"
+            min="0" step="0.01" placeholder="0.00"
+            inputmode="decimal" />
+        </label>
+      </div>
       <button class="btn-action sheet-submit" id="btnSaveFrais" type="button">
         Ajouter
       </button>
@@ -2496,10 +3554,11 @@ function _openFraisSheet(projet) {
     if (montant <= 0) { $('fraisMontantInput')?.focus(); return; }
 
     const fraisEntry = {
-      id:      _genId(),
+      id:        _genId(),
       label,
       montant,
-      date:    new Date().toISOString(),
+      categorie: $('fraisCatInput')?.value ?? 'autre',
+      date:      new Date().toISOString(),
     };
 
     const idx = state.projets.findIndex(p => p.id === projet.id);
@@ -2586,7 +3645,7 @@ function _subviewBilan(projet) {
     <div class="bilan-view">
 
       <!-- ── CA & frais ── -->
-      <div class="glass-card bilan-section">
+      <div class="glass-card bilan-section" data-bilan-card="0">
         <p class="bilan-section-title">Chiffre d'affaires</p>
         <div class="bilan-row">
           <span class="bilan-row-label">Prix facturé</span>
@@ -2610,7 +3669,7 @@ function _subviewBilan(projet) {
       </div>
 
       <!-- ── Temps ── -->
-      <div class="glass-card bilan-section">
+      <div class="glass-card bilan-section" data-bilan-card="1">
         <p class="bilan-section-title">Temps</p>
         <div class="bilan-row">
           <span class="bilan-row-label">Effectif (sessions)</span>
@@ -2636,7 +3695,7 @@ function _subviewBilan(projet) {
         const deltaSign = delta === null ? '' : delta > 0 ? `+${delta}` : `${delta}`;
         const deltaCls  = delta === null ? '' : delta > 0 ? 'is-warn' : delta < 0 ? 'is-neutral' : '';
         return `
-      <div class="glass-card bilan-section">
+      <div class="glass-card bilan-section" data-bilan-card="2">
         <p class="bilan-section-title">Photos</p>
         <div class="bilan-row">
           <span class="bilan-row-label">Commandées</span>
@@ -2661,7 +3720,7 @@ function _subviewBilan(projet) {
       })()}
 
       <!-- ── Taux horaire ── -->
-      <div class="glass-card bilan-section">
+      <div class="glass-card bilan-section" data-bilan-card="3">
         <p class="bilan-section-title">Taux horaire</p>
         <div class="bilan-row">
           <span class="bilan-row-label">Taux offre (quotas)</span>
@@ -2692,7 +3751,7 @@ function _subviewBilan(projet) {
       </div>
 
       <!-- ── Verdict ── -->
-      <div class="glass-card bilan-verdict">
+      <div class="glass-card bilan-verdict" data-bilan-card="4">
         <p class="bilan-verdict-label">Verdict</p>
         <div class="bilan-verdict-icon ${clsBilan}">${verdictIcon}</div>
         <p class="bilan-verdict-text ${clsBilan}">${verdictText}</p>
@@ -2750,8 +3809,17 @@ function _fmtH(h) {
  * L'état checked est lu depuis projet.checklist par id.
  */
 function _renderChecklistSection(projet) {
-  const materiel = (state.user?.materiel ?? []).filter(m => m.actif !== false);
-  const customItems = (projet.checklist ?? []).filter(c => c.isCustom);
+  // Tri : non cochés en premier
+  const materiel = (state.user?.materiel ?? [])
+    .filter(m => m.actif !== false)
+    .sort((a, b) => {
+      const aChecked = (projet.checklist ?? []).find(c => c.id === a.id)?.checked ?? false;
+      const bChecked = (projet.checklist ?? []).find(c => c.id === b.id)?.checked ?? false;
+      return (aChecked ? 1 : 0) - (bChecked ? 1 : 0);
+    });
+  const customItems = (projet.checklist ?? [])
+    .filter(c => c.isCustom)
+    .sort((a, b) => (a.checked ? 1 : 0) - (b.checked ? 1 : 0));
 
   const noMateriel = materiel.length === 0 && customItems.length === 0;
 
@@ -2871,7 +3939,7 @@ function _refreshChecklistSection(projet) {
   if (!body) { _refreshProjetSubView(); return; }
   body.innerHTML = _renderChecklistSection(projet);
   _wireChecklistSection(projet);
-  $('btnGoToProfil')?.addEventListener('click', () => navigateTo('profil'));
+  $('btnGoToProfil')?.addEventListener('click', () => navigateTo('moi'));
 }
 
 // _ensureChecklist supprimé — remplacé par la logique matériel profil (Phase 4)
