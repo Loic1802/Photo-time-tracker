@@ -2494,6 +2494,101 @@ input, select, textarea {
   margin: -4px 0 0;
 }
 
+/* ── Quota row avec picker ── */
+.fo-quota-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(30,50,70,.06);
+}
+.fo-quota-row:last-of-type { border-bottom: none; }
+
+.fo-quota-label {
+  font-size: .88rem;
+  color: rgba(30,50,70,.75);
+  font-weight: 500;
+}
+
+.time-picker-btn {
+  min-width: 64px;
+  padding: 6px 12px;
+  background: rgba(245,165,80,.12);
+  border: 1.5px solid rgba(245,165,80,.3);
+  border-radius: 20px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: .88rem;
+  font-weight: 600;
+  color: rgba(20,40,60,.8);
+  cursor: pointer;
+  text-align: center;
+  transition: background .12s, border-color .12s;
+}
+.time-picker-btn:active { background: rgba(245,165,80,.22); }
+.time-picker-btn.is-locked {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.fo-quota-total {
+  font-size: .8rem;
+  color: rgba(30,50,70,.5);
+  text-align: right;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(30,50,70,.08);
+}
+.fo-quota-total strong { color: rgba(20,40,60,.8); }
+
+/* ── Picker roue bottom sheet ── */
+.time-picker-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  height: 220px;
+  overflow: hidden;
+  padding: 0 20px 0;
+}
+
+.time-picker-highlight {
+  position: absolute;
+  left: 20px; right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 44px;
+  background: rgba(245,165,80,.13);
+  border-radius: 10px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.time-picker-col {
+  flex: 1;
+  height: 100%;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  /* Padding so first/last items can center */
+  padding: 88px 0;
+}
+.time-picker-col::-webkit-scrollbar { display: none; }
+
+.time-picker-item {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  scroll-snap-align: center;
+  font-size: 1.3rem;
+  font-weight: 300;
+  color: rgba(30,50,70,.35);
+  transition: color .15s, font-weight .15s;
+  cursor: pointer;
+}
+/* Mise en évidence de l'item centré — JS scroll snap */
+
 .fo-section-actions {
   display: flex;
   flex-direction: column;
@@ -2547,43 +2642,55 @@ input, select, textarea {
 /* Prix conseillé — double vue */
 
 .fo-prix-conseil {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 4px 0;
   background: rgba(255,255,255,.45);
   border: 1px solid rgba(255,255,255,.75);
   border-radius: 12px;
+  overflow: hidden;
 }
 
 .fo-prix-item {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  text-align: center;
+  gap: 3px;
+  padding: 12px 14px;
+}
+
+.fo-prix-item-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .fo-prix-label {
-  font-size: .65rem;
-  font-weight: 700;
-  color: rgba(30,50,70,.38);
-  text-transform: uppercase;
-  letter-spacing: .06em;
+  font-size: .72rem;
+  font-weight: 600;
+  color: rgba(30,50,70,.5);
 }
 
 .fo-prix-val {
-  font-size: 1.1rem;
-  font-weight: 600;
+  font-size: 1rem;
+  font-weight: 700;
   color: rgba(20,40,60,.85);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fo-prix-val.is-neutral { color: rgba(30,50,70,.3); }
+
+.fo-prix-detail {
+  font-size: .72rem;
+  color: rgba(30,50,70,.38);
+  line-height: 1.4;
 }
 
 .fo-prix-sep {
-  width: 1px;
-  height: 32px;
-  background: rgba(30,50,70,.12);
-  margin: 0 8px;
+  height: 1px;
+  background: rgba(30,50,70,.08);
+  margin: 0;
 }
 
 /* Frais total */
@@ -2615,6 +2722,46 @@ input, select, textarea {
 .fo-perdiem-hint strong {
   color: rgba(20,40,60,.8);
 }
+
+/* Jours de shooting */
+.fo-jours-row {
+  border-bottom: 1px solid rgba(30,50,70,.06);
+  padding-bottom: 8px;
+  margin-bottom: 2px;
+}
+
+.fo-jours-input {
+  width: 56px;
+  text-align: center;
+  padding: 6px 8px;
+  font-size: .9rem;
+  border: 1.5px solid rgba(30,50,70,.15);
+  border-radius: 8px;
+  background: rgba(255,255,255,.6);
+  font-variant-numeric: tabular-nums;
+}
+
+.fo-jours-hint {
+  font-size: .75rem;
+  color: rgba(30,50,70,.4);
+  margin: -4px 0 6px;
+  font-style: italic;
+}
+
+/* Toggle perdiem */
+.fo-perdiem-toggle {
+  margin-top: 8px;
+  border-top: 1px dashed rgba(30,50,70,.1);
+  padding-top: 6px;
+}
+
+.fo-perdiem-toggle-btn {
+  font-size: .78rem;
+  padding: 6px 0;
+  color: rgba(30,50,70,.38);
+  text-align: left;
+}
+.fo-perdiem-toggle-btn:active { color: rgba(30,50,70,.65); }
 
 /* Acompte hint */
 
@@ -2674,29 +2821,36 @@ input, select, textarea {
 
 /* Contact avec liens cliquables */
 
-.fr-contact-field {
+.contact-icon-row {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: 10px;
+  padding: 4px 0 8px;
 }
 
-.fr-action-link {
-  display: inline-flex;
+.contact-icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.55);
+  border: 1px solid rgba(255,255,255,.75);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: .8rem;
-  font-weight: 600;
-  color: #3A7ABF;
+  justify-content: center;
   text-decoration: none;
-  padding: 5px 10px;
-  background: rgba(58,122,191,.1);
-  border-radius: 20px;
-  align-self: flex-start;
-  transition: background .15s;
+  color: rgba(30,50,70,.75);
+  transition: background .15s, transform .1s;
+  flex-shrink: 0;
 }
-
-.fr-action-link:active {
-  background: rgba(58,122,191,.2);
+.contact-icon-btn svg {
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+.contact-icon-btn:active {
+  background: rgba(255,255,255,.8);
+  transform: scale(.93);
 }
 
 /* Accordéon offre — récap read-only */
@@ -2917,6 +3071,23 @@ input, select, textarea {
   font-weight: 600;
   color: rgba(20,40,60,.8);
   line-height: 1.2;
+}
+
+.cat-grid-eff {
+  font-size: .78rem;
+  font-weight: 500;
+  color: rgba(20,40,60,.65);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.cat-grid-pct {
+  font-size: .65rem;
+  font-weight: 700;
+  color: rgba(20,40,60,.38);
+}
+.cat-grid-pct.is-over {
+  color: #E07878;
 }
 
 .cat-grid-bar-wrap {

@@ -314,6 +314,8 @@ const TYPE_LABELS = {
   mariage:    'Mariage',
   event:      'Événement',
   commercial: 'Commercial',
+  packshot:   'Packshot',
+  editorial:  'Éditorial',
   autre:      'Autre',
 };
 
@@ -342,6 +344,7 @@ function _ensureOffreFields(p) {
   if (p.acompte       == null)   p.acompte           = 30;
   if (p.delaiLivraison == null)  p.delaiLivraison    = 14;
   if (p.dateEnvoi     == null)   p.dateEnvoi         = null;
+  if (p.joursShooting == null)   p.joursShooting     = 1;
 }
 
 function _calcPerdiem(p) {
@@ -357,12 +360,27 @@ function _getDroitsPct(key) {
   return DROITS_OPTIONS.find(o => o.key === key)?.pct ?? 0;
 }
 
+// Retourne { prix, tauxMoyen, count } ou null si pas assez de données
 function _prixConseilleSimil(p) {
+  function _tempsReelH(proj) {
+    return (proj.sessions ?? []).reduce((s, x) => s + (Number(x.duree) || 0), 0) / 60;
+  }
   const similaires = state.projets.filter(x =>
-    x.id !== p.id && x.type === p.type && x.statut === 'termine' && Number(x.prixFacture) > 0
+    x.id !== p.id && x.type === p.type && x.statut === 'termine'
+    && Number(x.prixFacture) > 0 && _tempsReelH(x) > 0
   );
   if (!similaires.length) return null;
-  return Math.round(similaires.reduce((s, x) => s + Number(x.prixFacture), 0) / similaires.length);
+
+  const totalPrix   = similaires.reduce((s, x) => s + Number(x.prixFacture), 0);
+  const totalHeures = similaires.reduce((s, x) => s + _tempsReelH(x), 0);
+  const tauxMoyen   = totalPrix / totalHeures;
+
+  // Prix pour ce projet : quotas estimés × taux moyen + frais estimés
+  const quotasH   = Object.values(p.quotas ?? {}).reduce((s, v) => s + (Number(v) || 0), 0);
+  const fraisEst  = _calcTotalFraisEstimes(p);
+  const prix      = Math.round(quotasH * tauxMoyen + fraisEst);
+
+  return { prix, tauxMoyen: Math.round(tauxMoyen), count: similaires.length };
 }
 
 function _prixConseilleQuotas(p) {
@@ -376,20 +394,64 @@ function _prixConseilleQuotas(p) {
 }
 
 function _renderPrixConseille(p) {
-  const simil  = _prixConseilleSimil(p);
-  const quotas = _prixConseilleQuotas(p);
-  return `
-    <div class="fo-prix-conseil">
+  const simil  = _prixConseilleSimil(p);   // { prix, tauxMoyen, count } | null
+  const quotas = _prixConseilleQuotas(p);  // nombre | null
+
+  const quotasH  = Object.values(p.quotas ?? {}).reduce((s, v) => s + (Number(v) || 0), 0);
+  const fraisEst = _calcTotalFraisEstimes(p);
+  const typeLbl  = p.type
+    ? (p.type.charAt(0).toUpperCase() + p.type.slice(1)) : 'ce type';
+
+  // Ligne similaires
+  let similRow;
+  if (simil) {
+    similRow = `
       <div class="fo-prix-item">
-        <span class="fo-prix-label">Projets similaires</span>
-        <span class="fo-prix-val" id="foPrixSimil">${simil != null ? _fmtCHF(simil) : '—'}</span>
-      </div>
-      <div class="fo-prix-sep"></div>
+        <div class="fo-prix-item-main">
+          <span class="fo-prix-label">Projets similaires</span>
+          <span class="fo-prix-val" id="foPrixSimil">${_fmtCHF(simil.prix)}</span>
+        </div>
+        <span class="fo-prix-detail">${simil.tauxMoyen} CHF/h moyen · ${simil.count} projet${simil.count > 1 ? 's' : ''} ${typeLbl}</span>
+      </div>`;
+  } else {
+    similRow = `
       <div class="fo-prix-item">
-        <span class="fo-prix-label">Quotas × taux</span>
-        <span class="fo-prix-val" id="foPrixQuotas">${quotas != null ? _fmtCHF(quotas) : '—'}</span>
-      </div>
-    </div>`;
+        <div class="fo-prix-item-main">
+          <span class="fo-prix-label">Projets similaires</span>
+          <span class="fo-prix-val is-neutral" id="foPrixSimil">—</span>
+        </div>
+        <span class="fo-prix-detail">Pas encore assez de données</span>
+      </div>`;
+  }
+
+  // Ligne quotas × taux
+  let quotasRow;
+  if (quotas != null) {
+    const base    = Math.round(quotasH * (state.user?.tauxCible ?? 0));
+    const details = [
+      quotasH > 0 ? `${_fmtH(quotasH)} × ${state.user.tauxCible} CHF/h` : null,
+      fraisEst > 0 ? `+ ${_fmtCHF(fraisEst)} frais` : null,
+    ].filter(Boolean).join(' ');
+    quotasRow = `
+      <div class="fo-prix-item">
+        <div class="fo-prix-item-main">
+          <span class="fo-prix-label">Quotas × taux cible</span>
+          <span class="fo-prix-val" id="foPrixQuotas">${_fmtCHF(quotas)}</span>
+        </div>
+        ${details ? `<span class="fo-prix-detail">${details}</span>` : ''}
+      </div>`;
+  } else {
+    quotasRow = `
+      <div class="fo-prix-item">
+        <div class="fo-prix-item-main">
+          <span class="fo-prix-label">Quotas × taux cible</span>
+          <span class="fo-prix-val is-neutral" id="foPrixQuotas">—</span>
+        </div>
+        <span class="fo-prix-detail">Configure ton taux dans Profil</span>
+      </div>`;
+  }
+
+  return `<div class="fo-prix-conseil">${similRow}<div class="fo-prix-sep"></div>${quotasRow}</div>`;
 }
 
 function _renderOffreActions(p) {
@@ -409,7 +471,7 @@ function _renderOffreActions(p) {
         Offre acceptée ✓
       </button>
       <button class="btn-action btn-secondary" id="btnMajOffre" type="button">
-        Mettre à jour l'offre
+        Offre mise à jour et renvoyée →
       </button>
       <button class="fo-corriger-btn" id="btnSansSuiteOffre" type="button">
         Sans suite
@@ -430,7 +492,8 @@ function _viewFicheOffre() {
 
   const typeOptions = [
     ['corporate','Corporate'], ['portrait','Portrait'], ['mariage','Mariage'],
-    ['event','Événement'], ['commercial','Commercial'], ['autre','Autre'],
+    ['event','Événement'], ['commercial','Commercial'],
+    ['packshot','Packshot'], ['editorial','Éditorial'], ['autre','Autre'],
   ];
   const totalFrais = _calcTotalFraisEstimes(p);
   const perdiem    = _calcPerdiem(p);
@@ -555,17 +618,50 @@ function _viewFicheOffre() {
 
       <!-- 4 · Temps estimés -->
       <div class="fo-section glass-card">
-        <p class="fo-section-title">Temps estimés (h)</p>
-        ${Object.entries(CATEGORIES).map(([cat, info]) => `
-          <label for="foQ_${cat}">${info.label}
-            <input id="foQ_${cat}" type="number" min="0" step="0.5" inputmode="decimal"
-              value="${p.quotas?.[cat] ?? 0}" placeholder="0"
-              data-quota="${cat}"${dis} />
-          </label>`).join('')}
-        <p class="fo-perdiem-hint" style="${perdiem <= 0 ? 'display:none;' : ''}">
-          Perdiem estimé : <strong>${_fmtCHF(perdiem)}</strong>
-          (${p.quotas?.shooting ?? 0} h shooting ÷ 8 × ${state.user?.perdiem ?? 50} CHF/j)
-        </p>
+        <p class="fo-section-title">Temps estimés</p>
+        <!-- Jours de shooting -->
+        <div class="fo-quota-row fo-jours-row">
+          <span class="fo-quota-label">Jours de shooting</span>
+          <input id="foJoursShooting" type="number" min="1" step="1" inputmode="numeric"
+            value="${p.joursShooting ?? 1}" placeholder="1"
+            class="fo-jours-input"
+            data-field="joursShooting"${dis} />
+        </div>
+        ${Number(p.joursShooting) > 1 ? `
+        <p class="fo-jours-hint" id="foJoursHint">
+          ${p.joursShooting} jour${p.joursShooting > 1 ? 's' : ''} × ${_fmtTimePicker(Number(p.quotas?.shooting ?? 0) / (p.joursShooting || 1))} / jour
+        </p>` : ''}
+        <!-- Quotas par catégorie -->
+        ${Object.entries(CATEGORIES).map(([cat, info]) => {
+          const hVal = Number(p.quotas?.[cat]) || 0;
+          return `
+          <div class="fo-quota-row">
+            <span class="fo-quota-label">${info.label}</span>
+            <button class="time-picker-btn${locked ? ' is-locked' : ''}"
+              type="button" data-quota="${cat}"
+              ${locked ? 'disabled' : ''}
+              aria-label="${info.label} : ${_fmtTimePicker(hVal)}">
+              ${_fmtTimePicker(hVal)}
+            </button>
+          </div>`;
+        }).join('')}
+        <div class="fo-quota-total" id="foQuotaTotal">
+          Total : <strong>${_fmtH(Object.values(p.quotas ?? {}).reduce((s,v)=>s+(Number(v)||0),0))}</strong>
+        </div>
+        <!-- Perdiem — masqué par défaut, activable -->
+        <div class="fo-perdiem-toggle">
+          <button class="btn-text-muted fo-perdiem-toggle-btn" id="btnTogglePerdiem" type="button">
+            ${p.fraisEstimes?.perdiem > 0 ? '▾ Masquer le perdiem' : '+ Ajouter un perdiem'}
+          </button>
+          <div id="foPerdiemSection" style="${p.fraisEstimes?.perdiem > 0 ? '' : 'display:none;'}">
+            <p class="fo-perdiem-hint" id="foPerdiemHint">
+              ${perdiem > 0
+                ? `Perdiem estimé : <strong>${_fmtCHF(perdiem)}</strong>
+                   (${p.quotas?.shooting ?? 0}h shooting ÷ 8 × ${state.user?.perdiem ?? 50} CHF/j)`
+                : 'Ajoute les jours de shooting et configure ton perdiem dans Profil.'}
+            </p>
+          </div>
+        </div>
       </div>
 
       <!-- 5 · Droits d'utilisation -->
@@ -639,6 +735,94 @@ function _viewFicheOffre() {
     </div>`;
 }
 
+// ─── Picker roue — temps estimés ───────────────────────
+
+function _fmtTimePicker(h) {
+  if (!h || h <= 0) return '—';
+  const totalMin = Math.round(h * 60);
+  const hh = Math.floor(totalMin / 60);
+  const mm = totalMin % 60;
+  if (hh === 0)        return `${mm}min`;
+  if (mm === 0)        return `${hh}h`;
+  return `${hh}h${String(mm).padStart(2, '0')}`;
+}
+
+function _openTimePicker(cat, currentH, onConfirm) {
+  if (document.querySelector('.bottom-sheet')) return;
+
+  const totalMin    = Math.round((currentH || 0) * 60);
+  const initH       = Math.floor(totalMin / 60);
+  const initMRaw    = totalMin % 60;
+  const MINS        = [0, 15, 30, 45];
+  const initMIdx    = MINS.reduce((best, m, i) =>
+    Math.abs(m - initMRaw) < Math.abs(MINS[best] - initMRaw) ? i : best, 0);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'sheet-overlay';
+  overlay.id = 'sheetOverlay';
+  overlay.addEventListener('click', _closeSheet);
+
+  const sheet = document.createElement('div');
+  sheet.className = 'bottom-sheet';
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h2 class="sheet-title">Durée estimée</h2>
+      <button class="icon-button" id="closePickerSheet" type="button" aria-label="Fermer">
+        <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="time-picker-wrap">
+      <div class="time-picker-highlight" aria-hidden="true"></div>
+      <div class="time-picker-col" id="pickerHours" role="listbox" aria-label="Heures">
+        ${Array.from({length: 13}, (_, i) =>
+          `<div class="time-picker-item" data-val="${i}" role="option">${i}h</div>`
+        ).join('')}
+      </div>
+      <div class="time-picker-col" id="pickerMins" role="listbox" aria-label="Minutes">
+        ${MINS.map(m =>
+          `<div class="time-picker-item" data-val="${m}" role="option">${String(m).padStart(2,'0')}</div>`
+        ).join('')}
+      </div>
+    </div>
+    <div class="sheet-form" style="padding-top:0;">
+      <div class="form-row">
+        <button class="btn-secondary" id="btnPickerCancel" type="button">Annuler</button>
+        <button class="btn-action" id="btnPickerConfirm" type="button">Confirmer</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(sheet);
+
+  // Positionner les roues sur la valeur initiale
+  const ITEM_H = 44;
+  const colH   = document.querySelector('.time-picker-col');
+  // Scroll après paint
+  requestAnimationFrame(() => {
+    overlay.classList.add('is-visible');
+    sheet.classList.add('is-open');
+    const hCol = $('pickerHours');
+    const mCol = $('pickerMins');
+    if (hCol) hCol.scrollTop = initH * ITEM_H;
+    if (mCol) mCol.scrollTop = initMIdx * ITEM_H;
+  });
+
+  sheet.querySelector('#closePickerSheet').addEventListener('click', _closeSheet);
+  sheet.querySelector('#btnPickerCancel').addEventListener('click', _closeSheet);
+
+  sheet.querySelector('#btnPickerConfirm').addEventListener('click', () => {
+    const hCol  = $('pickerHours');
+    const mCol  = $('pickerMins');
+    const selH  = Math.round((hCol?.scrollTop ?? 0) / ITEM_H);
+    const selMI = Math.round((mCol?.scrollTop ?? 0) / ITEM_H);
+    const hours = Math.min(12, Math.max(0, selH));
+    const mins  = MINS[Math.min(3, Math.max(0, selMI))] ?? 0;
+    _closeSheet();
+    onConfirm(hours + mins / 60);
+  });
+}
+
 function _wireFicheOffre() {
   const projetIdx = state.projets.findIndex(x => x.id === state.activeProjetId);
   if (projetIdx === -1) return;
@@ -685,20 +869,31 @@ function _wireFicheOffre() {
     })
   );
 
-  // Auto-save : quotas
-  $('viewContainer').querySelectorAll('[data-quota]').forEach(el =>
-    el.addEventListener('change', () => {
-      const cat = el.dataset.quota;
-      if (!state.projets[projetIdx].quotas) state.projets[projetIdx].quotas = {};
-      state.projets[projetIdx].quotas[cat] = Number(el.value) || 0;
-      save.projets();
-      _refreshFoCalcs(projetIdx);
-    })
-  );
+  // Picker roue : quotas de temps
+  $('viewContainer').querySelectorAll('.time-picker-btn[data-quota]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat     = btn.dataset.quota;
+      const current = Number(state.projets[projetIdx].quotas?.[cat]) || 0;
+      _openTimePicker(cat, current, (newVal) => {
+        if (!state.projets[projetIdx].quotas) state.projets[projetIdx].quotas = {};
+        state.projets[projetIdx].quotas[cat] = newVal;
+        save.projets();
+        // Mettre à jour le bouton affiché
+        btn.textContent = _fmtTimePicker(newVal);
+        btn.setAttribute('aria-label', `${CATEGORIES[cat]?.label ?? cat} : ${_fmtTimePicker(newVal)}`);
+        // Mettre à jour le total
+        const totalH = Object.values(state.projets[projetIdx].quotas)
+          .reduce((s, v) => s + (Number(v) || 0), 0);
+        const totEl = $('foQuotaTotal');
+        if (totEl) totEl.innerHTML = `Total : <strong>${_fmtH(totalH)}</strong>`;
+        _refreshFoCalcs(projetIdx);
+      });
+    });
+  });
 
-  // Auto-save : frais estimés
+  // Auto-save : frais estimés — `input` pour mise à jour en temps réel
   $('viewContainer').querySelectorAll('[data-frais]').forEach(el =>
-    el.addEventListener('change', () => {
+    el.addEventListener('input', () => {
       const k = el.dataset.frais;
       if (!state.projets[projetIdx].fraisEstimes) state.projets[projetIdx].fraisEstimes = {};
       state.projets[projetIdx].fraisEstimes[k] = Number(el.value) || 0;
@@ -707,6 +902,45 @@ function _wireFicheOffre() {
       _refreshFoPrixQuotas(projetIdx);
     })
   );
+
+  // Jours de shooting — auto-save + hint
+  $('foJoursShooting')?.addEventListener('input', e => {
+    const jours = Math.max(1, Number(e.target.value) || 1);
+    state.projets[projetIdx].joursShooting = jours;
+    save.projets();
+    // Mise à jour du hint
+    const hint = $('foJoursHint');
+    const shootH = Number(state.projets[projetIdx].quotas?.shooting ?? 0);
+    if (jours > 1) {
+      const perJour = jours > 0 ? shootH / jours : 0;
+      if (hint) {
+        hint.textContent = `${jours} jours × ${_fmtTimePicker(perJour)} / jour`;
+        hint.style.display = '';
+      } else {
+        // Insérer dynamiquement si absent
+        const joursRow = $('foJoursShooting')?.closest('.fo-jours-row');
+        if (joursRow) {
+          const p2 = document.createElement('p');
+          p2.id = 'foJoursHint';
+          p2.className = 'fo-jours-hint';
+          p2.textContent = `${jours} jours × ${_fmtTimePicker(perJour)} / jour`;
+          joursRow.insertAdjacentElement('afterend', p2);
+        }
+      }
+    } else {
+      if (hint) hint.style.display = 'none';
+    }
+  });
+
+  // Toggle perdiem
+  $('btnTogglePerdiem')?.addEventListener('click', () => {
+    const sec = $('foPerdiemSection');
+    const btn = $('btnTogglePerdiem');
+    if (!sec) return;
+    const isOpen = sec.style.display !== 'none';
+    sec.style.display = isOpen ? 'none' : '';
+    if (btn) btn.textContent = isOpen ? '+ Ajouter un perdiem' : '▾ Masquer le perdiem';
+  });
 
   _wireOffreActions(projetIdx);
 }
@@ -720,8 +954,7 @@ function _wireOffreActions(idx) {
     p.statut    = 'offreenvoyee';
     p.dateEnvoi = new Date().toISOString().slice(0, 10);
     save.projets();
-    _refreshOffreActionsEl(idx);
-    _renderTopbar('ficheoffre');
+    navigateTo('studio');
   });
 
   $('btnMajOffre')?.addEventListener('click', () => {
@@ -784,10 +1017,16 @@ function _refreshFoFraisTotal(idx) {
 }
 
 function _refreshFoPrixQuotas(idx) {
-  const el = $('foPrixQuotas');
-  if (el) {
-    const v = _prixConseilleQuotas(state.projets[idx]);
-    el.textContent = v != null ? _fmtCHF(v) : '—';
+  const p = state.projets[idx];
+  const elQ = $('foPrixQuotas');
+  if (elQ) {
+    const v = _prixConseilleQuotas(p);
+    elQ.textContent = v != null ? _fmtCHF(v) : '—';
+  }
+  const elS = $('foPrixSimil');
+  if (elS) {
+    const s = _prixConseilleSimil(p);
+    elS.textContent = s ? _fmtCHF(s.prix) : '—';
   }
 }
 
@@ -1156,8 +1395,9 @@ function _statutPill(p) {
 function _autoStatut(idx) {
   const p = state.projets[idx];
   if (!p) return;
-  // Statuts manuels finaux — jamais écrasés par la logique de date
-  if (p.statut === 'termine' || p.statut === 'sanssuite' || p.statut === 'offreenvoyee') return;
+  // Statuts manuels — jamais écrasés par la logique de date
+  if (p.statut === 'brouillon'    || p.statut === 'offreenvoyee' ||
+      p.statut === 'sanssuite'    || p.statut === 'termine') return;
 
   const ds = p.dateShooting ?? null;
   let newStatut;
@@ -1190,9 +1430,10 @@ function _openNewProjectSheet(editProjet = null) {
 
   const isEdit  = editProjet !== null;
   const types   = [
-    ['corporate', 'Corporate'], ['portrait', 'Portrait'],
-    ['mariage',   'Mariage'],   ['event',    'Événement'],
-    ['commercial','Commercial'],['autre',    'Autre'],
+    ['corporate', 'Corporate'], ['portrait',  'Portrait'],
+    ['mariage',   'Mariage'],   ['event',     'Événement'],
+    ['commercial','Commercial'],['packshot',  'Packshot'],
+    ['editorial', 'Éditorial'], ['autre',     'Autre'],
   ];
 
   const overlay = document.createElement('div');
@@ -2432,35 +2673,62 @@ function _subviewPreparer(projet) {
               value="${_esc(fr.contact ?? '')}" />
           </label>
           <div class="form-row">
-            <div class="fr-contact-field">
-              <label for="frTel">Téléphone
-                <input id="frTel" type="tel"
-                  placeholder="+41 79 000 00 00"
-                  autocomplete="tel"
-                  value="${_esc(fr.telephone ?? '')}" />
-              </label>
-              ${fr.telephone ? `<a class="fr-action-link" id="frTelLink"
-                href="tel:${_esc(fr.telephone.replace(/\s/g,''))}">📞 Appeler</a>` : ''}
-            </div>
-            <div class="fr-contact-field">
-              <label for="frEmail">Email
-                <input id="frEmail" type="email"
-                  placeholder="client@exemple.com"
-                  autocomplete="email"
-                  value="${_esc(fr.email ?? '')}" />
-              </label>
-              ${fr.email ? `<a class="fr-action-link" id="frEmailLink"
-                href="mailto:${_esc(fr.email)}">✉️ Écrire</a>` : ''}
-            </div>
+            <label for="frTel">Téléphone
+              <input id="frTel" type="tel"
+                placeholder="+41 79 000 00 00"
+                autocomplete="tel"
+                value="${_esc(fr.telephone ?? '')}" />
+            </label>
+            <label for="frEmail">Email
+              <input id="frEmail" type="email"
+                placeholder="client@exemple.com"
+                autocomplete="email"
+                value="${_esc(fr.email ?? '')}" />
+            </label>
           </div>
           <label for="frLieu">Lieu
             <input id="frLieu" type="text"
               placeholder="Adresse ou lieu"
               autocomplete="off"
               value="${_esc(fr.lieu ?? '')}" />
-            ${fr.lieu ? `<a class="fr-action-link" href="https://maps.apple.com/?q=${encodeURIComponent(fr.lieu)}"
-              target="_blank" rel="noopener">🗺 Ouvrir Maps</a>` : ''}
           </label>
+          <!-- Boutons contact — visibles uniquement si valeur renseignée -->
+          <div class="contact-icon-row" id="contactIconRow">
+            ${fr.telephone ? `
+            <a class="contact-icon-btn" id="frTelBtn"
+              href="tel:${_esc(fr.telephone.replace(/\s/g,''))}"
+              aria-label="Appeler">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07
+                  A19.5 19.5 0 0 1 4.07 13 19.79 19.79 0 0 1 1 4.18 2 2 0 0 1
+                  2.96 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0
+                  1-.45 2.11L7.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1
+                  2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21 17z"/>
+              </svg>
+            </a>` : ''}
+            ${fr.email ? `
+            <a class="contact-icon-btn" id="frEmailBtn"
+              href="mailto:${_esc(fr.email)}"
+              aria-label="Écrire">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2"/>
+                <polyline points="2,4 12,13 22,4"/>
+              </svg>
+            </a>` : ''}
+            ${fr.lieu ? `
+            <a class="contact-icon-btn" id="frLieuBtn"
+              href="https://maps.apple.com/?q=${encodeURIComponent(fr.lieu)}"
+              target="_blank" rel="noopener"
+              aria-label="Ouvrir Maps">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+            </a>` : ''}
+          </div>
           <label for="frNotes">Notes terrain
             <textarea id="frNotes" rows="3"
               placeholder="Ambiance, style, contraintes, parking…"
@@ -2590,68 +2858,32 @@ function _wirePreparer(projet) {
   };
   ['frNomContact','frNotes'].forEach(id => $(id)?.addEventListener('input', _saveFR));
 
-  // Lieu : save + lien Maps live
-  $('frLieu')?.addEventListener('input', e => {
-    _saveFR();
-    const val  = e.target.value.trim();
-    const wrap = e.target.closest('label');
-    if (!wrap) return;
-    let link = wrap.querySelector('.fr-action-link');
-    if (val) {
-      if (!link) {
-        link = document.createElement('a');
-        link.className = 'fr-action-link';
-        link.target    = '_blank';
-        link.rel       = 'noopener';
-        wrap.appendChild(link);
-      }
-      link.href        = `https://maps.apple.com/?q=${encodeURIComponent(val)}`;
-      link.textContent = '🗺 Ouvrir Maps';
-    } else {
-      link?.remove();
-    }
-  });
+  // Lieu / Tel / Email : save + mise à jour icônes contact
+  ['frLieu','frTel','frEmail'].forEach(id =>
+    $(id)?.addEventListener('input', () => {
+      _saveFR();
+      _refreshContactIcons();
+    })
+  );
 
-  // Tel/email : save + mise à jour live du lien cliquable
-  $('frTel')?.addEventListener('input', e => {
-    _saveFR();
-    const val  = e.target.value.trim();
-    const wrap = e.target.closest('.fr-contact-field');
-    if (!wrap) return;
-    let link = wrap.querySelector('.fr-action-link');
-    if (val) {
-      if (!link) {
-        link = document.createElement('a');
-        link.className = 'fr-action-link';
-        link.id = 'frTelLink';
-        wrap.appendChild(link);
-      }
-      link.href        = `tel:${val.replace(/\s/g,'')}`;
-      link.textContent = '📞 Appeler';
-    } else {
-      link?.remove();
-    }
-  });
-
-  $('frEmail')?.addEventListener('input', e => {
-    _saveFR();
-    const val  = e.target.value.trim();
-    const wrap = e.target.closest('.fr-contact-field');
-    if (!wrap) return;
-    let link = wrap.querySelector('.fr-action-link');
-    if (val) {
-      if (!link) {
-        link = document.createElement('a');
-        link.className = 'fr-action-link';
-        link.id = 'frEmailLink';
-        wrap.appendChild(link);
-      }
-      link.href        = `mailto:${val}`;
-      link.textContent = '✉️ Écrire';
-    } else {
-      link?.remove();
-    }
-  });
+  function _refreshContactIcons() {
+    const row = $('contactIconRow');
+    if (!row) return;
+    const tel  = $('frTel')?.value.trim()   ?? '';
+    const email= $('frEmail')?.value.trim()  ?? '';
+    const lieu = $('frLieu')?.value.trim()   ?? '';
+    const mkSVG = (path) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+    row.innerHTML = [
+      tel  ? `<a class="contact-icon-btn" href="tel:${tel.replace(/\s/g,'')}" aria-label="Appeler">
+        ${mkSVG('<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.07 13 19.79 19.79 0 0 1 1 4.18 2 2 0 0 1 2.96 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21 17z"/>')}</a>` : '',
+      email? `<a class="contact-icon-btn" href="mailto:${email}" aria-label="Écrire">
+        ${mkSVG('<rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/>')}</a>` : '',
+      lieu ? `<a class="contact-icon-btn" href="https://maps.apple.com/?q=${encodeURIComponent(lieu)}"
+        target="_blank" rel="noopener" aria-label="Ouvrir Maps">
+        ${mkSVG('<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>')}</a>` : '',
+    ].join('');
+  }
 
   // Shots — ajouter
   const doAddShot = () => {
@@ -2832,6 +3064,9 @@ function _renderCatGrid(projet, activeCat) {
     const pct       = quotaMin > 0 ? Math.min(100, Math.round(eff / quotaMin * 100)) : 0;
     const isActive  = key === activeCat;
     const fillColor = pct >= 100 ? '#E07878' : pct >= 80 ? '#E09050' : cat.color;
+    const pctDisplay = quotaMin > 0
+      ? `<span class="cat-grid-pct${pct > 100 ? ' is-over' : ''}">${pct}%${pct > 100 ? '!' : ''}</span>`
+      : '';
     return `
       <button class="cat-grid-cell${isActive ? ' is-active' : ''}"
         data-cat="${key}" type="button"
@@ -2839,6 +3074,8 @@ function _renderCatGrid(projet, activeCat) {
           ? `border-color:${cat.color};background:${cat.bg};`
           : ''}">
         <span class="cat-grid-label">${cat.label}</span>
+        <span class="cat-grid-eff">${eff > 0 ? _fmtDuree(eff) : '—'}</span>
+        ${pctDisplay}
         <div class="cat-grid-bar-wrap">
           <div class="cat-grid-bar-fill"
             style="width:${pct}%;background:${fillColor};"></div>
@@ -4290,7 +4527,8 @@ function _saveProfil() {
   state.user = {
     prenom, specialite, revenuCible, joursFact, charges,
     tauxPlancher, tauxCible,
-    materiel:   state.user?.materiel   ?? [], // préservé — géré indépendamment
+    perdiem:    state.user?.perdiem    ?? 50,  // préservé
+    materiel:   state.user?.materiel   ?? [],  // préservé — géré indépendamment
     profilMode: _profilMode,
   };
   save.user();
