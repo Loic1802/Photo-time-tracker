@@ -187,7 +187,9 @@ function showShell(view = 'studio') {
   _migrateProjects();
   _renderTabBar();
   _injectFAB();
-  navigateTo(view);
+  // Premier lancement : si le taux cible n'est pas défini, rediriger vers Profil
+  const firstRun = !state.user || !(Number(state.user.tauxCible) > 0);
+  navigateTo(firstRun ? 'moi' : view);
 }
 
 function _renderTabBar() {
@@ -213,7 +215,7 @@ function navigateTo(view) {
 
   // FAB : masqué sur Moi et Ficheoffre
   const fab = $('fabGlobal');
-  if (fab) fab.style.display = (view === 'moi' || view === 'ficheoffre') ? 'none' : '';
+  if (fab) fab.style.display = (view === 'moi' || view === 'ficheoffre' || view === 'terrain') ? 'none' : '';
 
   _renderTopbar(view);
 
@@ -341,7 +343,7 @@ function _ensureOffreFields(p) {
   if (p.forfaitJours  == null)   p.forfaitJours      = 0;
   if (!p.droitsUtilisation)      p.droitsUtilisation = 'aucun';
   if (!p.fraisEstimes)           p.fraisEstimes      = { deplacement: 0, repas: 0, hebergement: 0, materiel: 0, autre: 0 };
-  if (p.acompte       == null)   p.acompte           = 30;
+  if (p.acompte       == null)   p.acompte           = 0;
   if (p.delaiLivraison == null)  p.delaiLivraison    = 14;
   if (p.dateEnvoi     == null)   p.dateEnvoi         = null;
   if (p.joursShooting == null)   p.joursShooting     = 1;
@@ -677,10 +679,27 @@ function _viewFicheOffre() {
       </div>
 
       <!-- 6 · Frais estimés -->
+      ${(() => {
+        const tauxKm = Number(state.user?.tauxKm) || 0.70;
+        const kmActuel = Number(p.kmDeplacement) || 0;
+        const chfDepl  = Math.round(kmActuel * tauxKm);
+        return `
       <div class="fo-section glass-card">
         <p class="fo-section-title">Frais estimés (CHF)</p>
+        <!-- Déplacement : km × tauxKm -->
+        <div class="fo-km-row">
+          <label for="foKmDeplacement" class="fo-km-label">Déplacement
+            <div class="fo-km-input-group">
+              <input id="foKmDeplacement" type="number" min="0" step="5" inputmode="numeric"
+                value="${kmActuel || ''}" placeholder="0" class="fo-km-input"${dis} />
+              <span class="fo-km-unit">km</span>
+            </div>
+          </label>
+          <p class="fo-km-result" id="foKmResult">${chfDepl > 0
+            ? `= <strong>${_fmtCHF(chfDepl)}</strong> (${tauxKm} CHF/km)`
+            : `${tauxKm} CHF/km — configure dans Profil`}</p>
+        </div>
         ${[
-          ['deplacement', 'Déplacement'],
           ['repas',       'Repas'],
           ['hebergement', 'Hébergement'],
           ['materiel',    'Matériel loué'],
@@ -694,21 +713,21 @@ function _viewFicheOffre() {
         <div class="fo-frais-total" id="foFraisTotal">
           Total frais : <strong>${_fmtCHF(totalFrais)}</strong>
         </div>
-      </div>
+      </div>`;})()}
 
       <!-- 7 · Prix -->
       <div class="fo-section glass-card">
         <p class="fo-section-title">Prix</p>
         <p class="fo-section-hint">Prix conseillé</p>
         ${_renderPrixConseille(p)}
-        <label for="foPrixFacture">Prix de l'offre (CHF)
+        <label for="foPrixFacture">Total de l'offre (CHF)
           <input id="foPrixFacture" type="number" min="0" step="50" inputmode="numeric"
             value="${p.prixFacture ?? ''}" placeholder="0"
             data-field="prixFacture"${dis} />
         </label>
         <label for="foAcompte">Acompte (%)
           <input id="foAcompte" type="number" min="0" max="100" step="5" inputmode="numeric"
-            value="${p.acompte ?? 30}" placeholder="30"
+            value="${p.acompte ?? 0}" placeholder="0"
             data-field="acompte"${dis} />
         </label>
         <p class="fo-acompte-hint" id="foAcompteVal">${
@@ -733,6 +752,76 @@ function _viewFicheOffre() {
 
       <div style="height:calc(env(safe-area-inset-bottom,16px) + 32px)"></div>
     </div>`;
+}
+
+// ─── Picker roue — générique ───────────────────────────
+
+/**
+ * Ouvre une bottom sheet avec une roue scroll-snap sur une liste de valeurs.
+ * @param {string}   label     — titre affiché dans le header
+ * @param {any[]}    values    — liste de valeurs (string ou number)
+ * @param {any}      current   — valeur sélectionnée initialement
+ * @param {Function} onConfirm — callback(selectedValue) à la confirmation
+ */
+function _openSimplePicker(label, values, current, onConfirm) {
+  if (document.querySelector('.bottom-sheet')) return;
+
+  const initIdx = Math.max(0, values.indexOf(current));
+  const ITEM_H  = 44;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'sheet-overlay';
+  overlay.id = 'sheetOverlay';
+  overlay.addEventListener('click', _closeSheet);
+
+  const sheet = document.createElement('div');
+  sheet.className = 'bottom-sheet';
+  sheet.innerHTML = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h2 class="sheet-title">${_esc(String(label))}</h2>
+      <button class="icon-button" id="closePickerSheet" type="button" aria-label="Fermer">
+        <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="time-picker-wrap">
+      <div class="time-picker-highlight" aria-hidden="true"></div>
+      <div class="time-picker-col simple-picker-col" id="simplePicker" role="listbox" aria-label="${_esc(String(label))}">
+        ${values.map((v, i) =>
+          `<div class="time-picker-item" data-idx="${i}" role="option">${v}</div>`
+        ).join('')}
+      </div>
+    </div>
+    <div class="sheet-form" style="padding-top:0;">
+      <div class="form-row">
+        <button class="btn-secondary" id="btnSimplePickerCancel" type="button">Annuler</button>
+        <button class="btn-action"    id="btnSimplePickerConfirm" type="button">Confirmer</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(sheet);
+
+  const col = sheet.querySelector('#simplePicker');
+  // Centrer sur la valeur initiale
+  requestAnimationFrame(() => {
+    col.scrollTop = initIdx * ITEM_H;
+    overlay.classList.add('is-visible');
+    sheet.classList.add('is-open');
+  });
+
+  // Lecture de la valeur sélectionnée : item centré dans la roue
+  function _readIdx() {
+    return Math.round(col.scrollTop / ITEM_H);
+  }
+
+  $('closePickerSheet')?.addEventListener('click', _closeSheet);
+  $('btnSimplePickerCancel')?.addEventListener('click', _closeSheet);
+  $('btnSimplePickerConfirm')?.addEventListener('click', () => {
+    const idx = Math.min(_readIdx(), values.length - 1);
+    _closeSheet();
+    onConfirm(values[idx]);
+  });
 }
 
 // ─── Picker roue — temps estimés ───────────────────────
@@ -891,6 +980,25 @@ function _wireFicheOffre() {
     });
   });
 
+  // Auto-save : km déplacement → calcule CHF auto
+  $('foKmDeplacement')?.addEventListener('input', e => {
+    const km = Number(e.target.value) || 0;
+    const tauxKm = Number(state.user?.tauxKm) || 0.70;
+    const chf = Math.round(km * tauxKm);
+    state.projets[projetIdx].kmDeplacement = km;
+    if (!state.projets[projetIdx].fraisEstimes) state.projets[projetIdx].fraisEstimes = {};
+    state.projets[projetIdx].fraisEstimes.deplacement = chf;
+    save.projets();
+    const result = $('foKmResult');
+    if (result) {
+      result.innerHTML = chf > 0
+        ? `= <strong>${_fmtCHF(chf)}</strong> (${tauxKm} CHF/km)`
+        : `${tauxKm} CHF/km — configure dans Profil`;
+    }
+    _refreshFoFraisTotal(projetIdx);
+    _refreshFoPrixQuotas(projetIdx);
+  });
+
   // Auto-save : frais estimés — `input` pour mise à jour en temps réel
   $('viewContainer').querySelectorAll('[data-frais]').forEach(el =>
     el.addEventListener('input', () => {
@@ -960,14 +1068,13 @@ function _wireOffreActions(idx) {
   $('btnMajOffre')?.addEventListener('click', () => {
     state.projets[idx].dateEnvoi = new Date().toISOString().slice(0, 10);
     save.projets();
-    _refreshOffreActionsEl(idx);
+    navigateTo('studio');
   });
 
   $('btnAccepterOffre')?.addEventListener('click', () => {
     state.projets[idx].statut = 'offreacceptee';
     save.projets();
-    state.projetSubView = 'brief';
-    navigateTo('terrain');
+    navigateTo('studio');
   });
 
   $('btnSansSuiteOffre')?.addEventListener('click', () => {
@@ -1032,6 +1139,7 @@ function _refreshFoPrixQuotas(idx) {
 
 function _viewStudio() {
   const caMois    = _statsCaMois();
+  const caAnnee   = _statsCaAnnee();
   const tauxMoyen = _statsTauxMoyen();
 
   // ── Hero card — projet urgent (encours = today, ou atraiter = passé non clôturé) ──
@@ -1049,9 +1157,12 @@ function _viewStudio() {
     const date = enCours.dateShooting
       ? new Date(enCours.dateShooting).toLocaleDateString('fr-CH', { day: 'numeric', month: 'short' })
       : '';
+    const heroBg = enCours.statut === 'atraiter'
+      ? 'rgba(184,96,10,0.15)' : 'rgba(46,125,82,0.15)';
     return `
-    <div class="studio-hero-card glass-card" data-hero-id="${enCours.id}" role="button" tabindex="0">
-      <p class="hero-eyebrow" style="color:${enCours.statut === 'atraiter' ? '#B8600A' : 'inherit'}">${enCours.statut === 'atraiter' ? 'À traiter' : 'En cours'}</p>
+    <div class="studio-hero-card glass-card" data-hero-id="${enCours.id}" role="button" tabindex="0"
+      style="background:${heroBg};">
+      <p class="hero-eyebrow" style="color:${enCours.statut === 'atraiter' ? '#B8600A' : '#2E7D52'}">${enCours.statut === 'atraiter' ? 'À traiter' : 'En cours'}</p>
       <p class="hero-nom">${_esc(enCours.nom)}</p>
       <div class="hero-meta">
         ${enCours.clientNom ? `<span>${_esc(enCours.clientNom)}</span>` : ''}
@@ -1087,13 +1198,17 @@ function _viewStudio() {
   })() : '';
 
   const statsHtml = `
-    <div class="stats-row">
+    <div class="stats-row stats-row-3">
       <div class="stat-card glass-card">
         <p class="stat-label">CA ce mois</p>
         <p class="stat-value">${caMois > 0 ? _fmtCHF(caMois) : '—'}</p>
       </div>
       <div class="stat-card glass-card">
-        <p class="stat-label">Taux moyen réel</p>
+        <p class="stat-label">CA ${new Date().getFullYear()}</p>
+        <p class="stat-value">${caAnnee > 0 ? _fmtCHF(caAnnee) : '—'}</p>
+      </div>
+      <div class="stat-card glass-card">
+        <p class="stat-label">Taux moyen</p>
         <p class="stat-value">${tauxMoyen !== null ? tauxMoyen + ' CHF/h' : '—'}</p>
       </div>
     </div>`;
@@ -1313,6 +1428,17 @@ function _statsCaMois() {
     .reduce((sum, p) => sum + (Number(p.prixFacture) || 0), 0);
 }
 
+function _statsCaAnnee() {
+  const annee = new Date().getFullYear();
+  return state.projets
+    .filter(p => {
+      if (p.statut === 'sanssuite') return false;
+      if (!p.dateShooting) return false;
+      return new Date(p.dateShooting).getFullYear() === annee;
+    })
+    .reduce((sum, p) => sum + (Number(p.prixFacture) || 0), 0);
+}
+
 function _statsTauxMoyen() {
   const projetsOk = state.projets.filter(p =>
     p.statut !== 'sanssuite' &&
@@ -1470,21 +1596,23 @@ function _openNewProjectSheet(editProjet = null) {
           placeholder="Nom du client ou de l'entreprise" autocomplete="off"
           value="${isEdit && editProjet.clientNom ? _esc(editProjet.clientNom) : ''}" />
       </label>
-      <div class="form-row">
-        <label for="nfType">
-          Type
-          <select id="nfType" name="type">
-            ${types.map(([v, l]) =>
-              `<option value="${v}"${isEdit && editProjet.type === v ? ' selected' : ''}>${l}</option>`
-            ).join('')}
-          </select>
-        </label>
-        <label for="nfDate">
-          Date prévue
-          <input id="nfDate" name="dateShooting" type="date"
-            value="${isEdit && editProjet.dateShooting ? editProjet.dateShooting : ''}" />
-        </label>
+      <div>
+        <p class="nf-type-label">Type</p>
+        <div class="nf-type-pills" id="nfTypePills">
+          ${types.map(([v, l]) => {
+            const sel = isEdit ? editProjet.type === v : v === 'corporate';
+            return `<button class="nf-type-pill${sel ? ' is-active' : ''}"
+              data-type="${v}" type="button">${l}</button>`;
+          }).join('')}
+        </div>
+        <input type="hidden" id="nfTypeHidden" name="type"
+          value="${isEdit ? editProjet.type ?? 'corporate' : 'corporate'}" />
       </div>
+      <label for="nfDate">
+        Date prévue
+        <input id="nfDate" name="dateShooting" type="date"
+          value="${isEdit && editProjet.dateShooting ? editProjet.dateShooting : ''}" />
+      </label>
       <label for="nfPrix">
         Prix facturé (CHF)
         <input id="nfPrix" name="prixFacture" type="number"
@@ -1503,6 +1631,15 @@ function _openNewProjectSheet(editProjet = null) {
     _editingProjetId = null;
     _closeSheet();
   });
+  // Pills type projet
+  document.querySelectorAll('.nf-type-pill').forEach(pill =>
+    pill.addEventListener('click', () => {
+      document.querySelectorAll('.nf-type-pill').forEach(p => p.classList.remove('is-active'));
+      pill.classList.add('is-active');
+      const hidden = $('nfTypeHidden');
+      if (hidden) hidden.value = pill.dataset.type;
+    })
+  );
   // _selectedClientIdNF : contact sélectionné via dropdown dans ce sheet
   let _selectedClientIdNF = null;
   $('newProjectForm').addEventListener('submit', e => _submitNewProject(e, _selectedClientIdNF));
@@ -1607,9 +1744,10 @@ function _openFABSheet() {
   let _selectedClientId = null; // renseigné par l'autocomplete
 
   const types = [
-    ['corporate', 'Corporate'], ['portrait', 'Portrait'],
-    ['mariage',   'Mariage'],   ['event',    'Événement'],
-    ['commercial','Commercial'],['autre',    'Autre'],
+    ['corporate', 'Corporate'], ['portrait',  'Portrait'],
+    ['mariage',   'Mariage'],   ['event',     'Événement'],
+    ['commercial','Commercial'],['packshot',  'Packshot'],
+    ['editorial', 'Éditorial'], ['autre',     'Autre'],
   ];
 
   const overlay = document.createElement('div');
@@ -2180,7 +2318,7 @@ function _refreshProjetSubView() {
 function _renderProjetSubView(sv, projet) {
   _removeChronoFAB(); // toujours nettoyer avant de rendre une sous-vue
   switch (sv) {
-    case 'brief':    return _subviewPreparer(projet); // Phase 3 remplacera par _subviewBrief
+    case 'brief':    return _subviewBrief(projet);
     case 'chrono':   return _subviewTemps(projet);    // Phase 4 remplacera par _subviewChrono
     case 'preparer': return _subviewPreparer(projet);
     case 'temps':    return _subviewTemps(projet);
@@ -2246,8 +2384,8 @@ function _showClotureOverlay(projet) {
     ? Math.round(prixFacture / tempsReel) : null;
   const photosCmd    = Number(projet.photosCommandees) || 0;
   const photosLiv    = Number(projet.photosLivrees)    || 0;
-  const prixParPhoto = photosCmd > 0 && prixFacture > 0
-    ? Math.round(prixFacture / photosCmd) : null;
+  const prixParPhoto = photosLiv > 0 && prixFacture > 0
+    ? Math.round(prixFacture / photosLiv) : null;
 
   // ── Performance ──
   let perf;
@@ -2300,6 +2438,37 @@ function _showClotureOverlay(projet) {
     prixParPhoto  ? _dcRow('CHF / photo', `${prixParPhoto} CHF`, 'green') : '',
   ].join('') : '';
 
+  // ── Conseil personnalisé ──
+  const conseil = (() => {
+    if (perf.isProfit) {
+      return `💪 Reproduis la formule — ce projet ${TYPE_LABELS[projet.type] ?? ''} tournait dans tes cordes.`;
+    }
+    // Trouver la catégorie la plus dépassée
+    const effByCat = {};
+    (projet.sessions ?? []).forEach(s => {
+      effByCat[s.categorie] = (effByCat[s.categorie] ?? 0) + (Number(s.duree) || 0);
+    });
+    let worstCat = null, worstOver = 0;
+    Object.entries(projet.quotas ?? {}).forEach(([cat, qH]) => {
+      const quotaMin = Number(qH) * 60;
+      const effMin   = effByCat[cat] ?? 0;
+      const over     = effMin - quotaMin;
+      if (over > worstOver) { worstOver = over; worstCat = cat; }
+    });
+    if (worstCat && worstOver > 0) {
+      const catLabel = CATEGORIES[worstCat]?.label ?? worstCat;
+      const overH    = +(worstOver / 60).toFixed(1);
+      if (perf.color === '#F59332') {
+        return `📌 Catégorie ${catLabel} dépassée de ${overH}h — intègre-la dans ton prochain devis similaire.`;
+      }
+      return `⚠️ ${catLabel} a consommé ${overH}h de plus que prévu. Revois ce quota à la hausse.`;
+    }
+    if (perf.color === '#F59332') {
+      return `📌 Taux plancher atteint. Ajuste ton tarif pour ce type de projet.`;
+    }
+    return `⚠️ Projet sous le plancher. Analyse la répartition du temps pour mieux pricer la prochaine fois.`;
+  })();
+
   // ── HTML overlay ──
   const overlay = document.createElement('div');
   overlay.id        = 'clotureOverlay';
@@ -2347,6 +2516,7 @@ function _showClotureOverlay(projet) {
         <div class="deploy-card-label">Livrables</div>
         ${dc3}
       </div>` : ''}
+      <div class="deploy-conseil" id="deployConseil">${conseil}</div>
       <button class="btn-retour-studio" id="btnClotureRetour" type="button">
         Retour Studio
       </button>
@@ -2434,9 +2604,14 @@ function _showDeployPhase(overlay, hasDc3) {
       setTimeout(() => document.getElementById(id)?.classList.add('visible'), i * 100);
     });
 
+    // Conseil personnalisé — apparaît après les cards
+    setTimeout(() => {
+      document.getElementById('deployConseil')?.classList.add('visible');
+    }, cardIds.length * 100 + 150);
+
     setTimeout(() => {
       document.getElementById('btnClotureRetour')?.classList.add('visible');
-    }, cardIds.length * 100 + 200);
+    }, cardIds.length * 100 + 400);
 
     document.getElementById('btnClotureRetour')?.addEventListener('click', () => {
       overlay.style.transition = 'opacity 0.35s ease';
@@ -2458,6 +2633,211 @@ function _animateTauxCounter(elId, target, duration, onDone) {
     else { el.textContent = String(target); if (onDone) onDone(); }
   }
   requestAnimationFrame(frame);
+}
+
+// ════════════════════════════════════════════════════════
+// SOUS-VUE BRIEF — 6 accordéons terrain
+// ════════════════════════════════════════════════════════
+
+function _subviewBrief(projet) {
+  const fr = projet.feuilleRoute ?? { contact:'', telephone:'', email:'', lieu:'', notes:'', shots:[] };
+
+  // Avatar initiales : initiales du contact ou du projet
+  const avatarSrc = (fr.contact || projet.nom || '?').trim();
+  const initiales  = avatarSrc.split(/\s+/).filter(Boolean).map(w => w[0]).join('').slice(0,2).toUpperCase() || '?';
+
+  // Shots triés : non cochés en premier
+  const sortedShots = [...(fr.shots ?? [])].sort((a,b) => (a.done?1:0) - (b.done?1:0));
+  const shotsHtml   = sortedShots.map(s => `
+    <div class="shot-row" data-shot-id="${s.id}">
+      <input type="checkbox" class="shot-check" data-shot-id="${s.id}" ${s.done ? 'checked' : ''} />
+      <span class="shot-label${s.done ? ' is-done' : ''}">${_esc(s.label)}</span>
+      <button class="shot-delete" data-shot-id="${s.id}" type="button" aria-label="Supprimer">×</button>
+    </div>`).join('');
+
+  // Offre recap (lecture seule)
+  const hasPrix      = Number(projet.prixFacture) > 0;
+  const droitsLabel  = DROITS_OPTIONS.find(o => o.key === (projet.droitsUtilisation ?? 'aucun'))?.label ?? '—';
+  const totalFraisOff= _calcTotalFraisEstimes(projet);
+  const acompteVal   = hasPrix && projet.acompte
+    ? _fmtCHF(Math.round(Number(projet.prixFacture) * Number(projet.acompte) / 100))
+    : null;
+
+  // Temps estimés (lecture seule)
+  const cats   = [
+    ['admin','Admin'],['prepa','Prépa'],['shooting','Shooting'],
+    ['trajet','Trajet'],['edition','Édition'],['revisions','Révisions'],
+  ];
+  const totalH = _totalQuotaH(projet);
+
+  // Boutons contact (icônes rondes)
+  const mkSVG = path => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+  const contactIconsHtml = [
+    fr.telephone ? `<a class="contact-icon-btn" id="frTelBtn"
+      href="tel:${_esc(fr.telephone.replace(/\s/g,''))}" aria-label="Appeler">
+      ${mkSVG('<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.07 13 19.79 19.79 0 0 1 1 4.18 2 2 0 0 1 2.96 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21 17z"/>')}</a>` : '',
+    fr.email ? `<a class="contact-icon-btn" id="frEmailBtn"
+      href="mailto:${_esc(fr.email)}" aria-label="Écrire">
+      ${mkSVG('<rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/>')}</a>` : '',
+    fr.lieu ? `<a class="contact-icon-btn" id="frLieuBtn"
+      href="https://maps.apple.com/?q=${encodeURIComponent(fr.lieu)}"
+      target="_blank" rel="noopener" aria-label="Ouvrir Maps">
+      ${mkSVG('<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>')}</a>` : '',
+  ].join('');
+
+  return `
+    <div class="offre-view">
+
+      <!-- ── 1. Infos client (ouvert) ── -->
+      <div class="accordion glass-card" data-acc="client">
+        <button class="accordion-header" type="button" aria-expanded="true" data-acc-btn="client">
+          <span class="accordion-title">Infos client</span>
+          <svg class="accordion-chevron is-open" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+        <div class="accordion-body" data-acc-body="client">
+          <div class="brief-client-header">
+            <div class="brief-avatar">${initiales}</div>
+            <div class="brief-client-meta">
+              <p class="brief-client-name">${_esc(fr.contact || projet.nom || '—')}</p>
+              <p class="brief-project-label">${_esc(TYPE_LABELS[projet.type] ?? projet.type)}</p>
+            </div>
+          </div>
+          <label for="frNomContact">Contact client
+            <input id="frNomContact" type="text"
+              placeholder="Prénom Nom" autocomplete="off"
+              value="${_esc(fr.contact ?? '')}" />
+          </label>
+          <div class="form-row">
+            <label for="frTel">Téléphone
+              <input id="frTel" type="tel"
+                placeholder="+41 79 000 00 00" autocomplete="tel"
+                value="${_esc(fr.telephone ?? '')}" />
+            </label>
+            <label for="frEmail">Email
+              <input id="frEmail" type="email"
+                placeholder="client@exemple.com" autocomplete="email"
+                value="${_esc(fr.email ?? '')}" />
+            </label>
+          </div>
+          <label for="frLieu">Lieu
+            <input id="frLieu" type="text"
+              placeholder="Adresse ou lieu" autocomplete="off"
+              value="${_esc(fr.lieu ?? '')}" />
+          </label>
+          <div class="contact-icon-row" id="contactIconRow">${contactIconsHtml}</div>
+        </div>
+      </div>
+
+      <!-- ── 2. Plan de shots (ouvert) ── -->
+      <div class="accordion glass-card" data-acc="shots">
+        <button class="accordion-header" type="button" aria-expanded="true" data-acc-btn="shots">
+          <span class="accordion-title">Plan de shots</span>
+          <span class="accordion-badge">${(fr.shots ?? []).length || ''}</span>
+          <svg class="accordion-chevron is-open" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+        <div class="accordion-body" data-acc-body="shots">
+          <div id="shotsList">${shotsHtml}</div>
+          <div class="shot-add-row">
+            <input id="shotInput" type="text"
+              placeholder="Ex: Portrait CEO · 3 variantes"
+              autocomplete="off" autocapitalize="sentences" />
+            <button class="btn-shot-add" id="btnAddShot" type="button" aria-label="Ajouter">+</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 3. Notes terrain (ouvert) ── -->
+      <div class="accordion glass-card" data-acc="notes">
+        <button class="accordion-header" type="button" aria-expanded="true" data-acc-btn="notes">
+          <span class="accordion-title">Notes terrain</span>
+          <svg class="accordion-chevron is-open" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+        <div class="accordion-body" data-acc-body="notes">
+          <textarea id="frNotes" rows="4"
+            placeholder="Ambiance, style, contraintes, parking, accès…"
+            style="resize:vertical;">${_esc(fr.notes ?? '')}</textarea>
+        </div>
+      </div>
+
+      <!-- ── 4. Matériel (ouvert) ── -->
+      <div class="accordion glass-card" data-acc="materiel">
+        <button class="accordion-header" type="button" aria-expanded="true" data-acc-btn="materiel">
+          <span class="accordion-title">Matériel</span>
+          <svg class="accordion-chevron is-open" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+        <div class="accordion-body" data-acc-body="materiel">
+          ${_renderChecklistSection(projet)}
+        </div>
+      </div>
+
+      <!-- ── 5. Temps estimés (fermé, lecture seule) ── -->
+      <div class="accordion glass-card" data-acc="temps-estimes">
+        <button class="accordion-header" type="button" aria-expanded="false" data-acc-btn="temps-estimes">
+          <span class="accordion-title">Temps estimés</span>
+          <span class="accordion-badge brief-lock-badge">🔒 Figés</span>
+          <svg class="accordion-chevron" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+        <div class="accordion-body is-closed" data-acc-body="temps-estimes">
+          <p class="brief-lock-hint">Figés selon l'offre acceptée — modifiables dans l'onglet Offre</p>
+          ${cats.map(([key, label]) => {
+            const h = projet.quotas?.[key] ?? 0;
+            if (h <= 0) return '';
+            return `
+            <div class="brief-temps-row">
+              <span class="brief-temps-dot" style="background:${CATEGORIES[key]?.color ?? '#aaa'}"></span>
+              <span class="brief-temps-label">${label}</span>
+              <span class="brief-temps-val">${_fmtH(h)}</span>
+            </div>`;
+          }).join('')}
+          ${totalH > 0 ? `
+          <div class="brief-temps-total">
+            <span>Total estimé</span>
+            <strong>${_fmtH(totalH)}</strong>
+          </div>` : '<p class="brief-empty">Aucun quota défini</p>'}
+        </div>
+      </div>
+
+      <!-- ── 6. Offre acceptée (fermé, lecture seule) ── -->
+      <div class="accordion glass-card" data-acc="offre">
+        <button class="accordion-header" type="button" aria-expanded="false" data-acc-btn="offre">
+          <span class="accordion-title">Offre acceptée</span>
+          <span class="accordion-badge">${hasPrix ? _fmtCHF(Number(projet.prixFacture)) : '—'}</span>
+          <svg class="accordion-chevron" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+        <div class="accordion-body is-closed" data-acc-body="offre">
+          <dl class="offre-recap-list">
+            ${hasPrix ? `<div class="offre-recap-row"><dt>Prix</dt><dd>${_fmtCHF(Number(projet.prixFacture))}</dd></div>` : ''}
+            ${projet.photosCommandees ? `<div class="offre-recap-row"><dt>Photos</dt><dd>${projet.photosCommandees}</dd></div>` : ''}
+            ${projet.videosCommandees ? `<div class="offre-recap-row"><dt>Vidéos</dt><dd>${projet.videosCommandees}</dd></div>` : ''}
+            ${projet.roundsRevisions  ? `<div class="offre-recap-row"><dt>Retouches</dt><dd>${projet.roundsRevisions} round${projet.roundsRevisions>1?'s':''}</dd></div>` : ''}
+            ${projet.delaiLivraison   ? `<div class="offre-recap-row"><dt>Livraison</dt><dd>${projet.delaiLivraison} j</dd></div>` : ''}
+            ${projet.droitsUtilisation && projet.droitsUtilisation !== 'aucun' ? `<div class="offre-recap-row"><dt>Droits</dt><dd>${droitsLabel}</dd></div>` : ''}
+            ${totalFraisOff > 0 ? `<div class="offre-recap-row"><dt>Frais estimés</dt><dd>${_fmtCHF(totalFraisOff)}</dd></div>` : ''}
+            ${acompteVal ? `<div class="offre-recap-row"><dt>Acompte ${projet.acompte} %</dt><dd>${acompteVal}</dd></div>` : ''}
+          </dl>
+        </div>
+      </div>
+
+    </div>`;
 }
 
 // ════════════════════════════════════════════════════════
@@ -3061,11 +3441,13 @@ function _renderCatGrid(projet, activeCat) {
   return Object.entries(CATEGORIES).map(([key, cat]) => {
     const quotaMin  = Math.round((Number(projet.quotas?.[key]) || 0) * 60);
     const eff       = effMin[key] ?? 0;
-    const pct       = quotaMin > 0 ? Math.min(100, Math.round(eff / quotaMin * 100)) : 0;
+    const rawPct    = quotaMin > 0 ? Math.round(eff / quotaMin * 100) : 0;
+    const visPct    = Math.min(100, rawPct); // largeur de la barre (cap 100%)
+    const isOver    = rawPct > 100;
     const isActive  = key === activeCat;
-    const fillColor = pct >= 100 ? '#E07878' : pct >= 80 ? '#E09050' : cat.color;
+    const fillColor = rawPct >= 100 ? '#E07878' : rawPct >= 80 ? '#E09050' : cat.color;
     const pctDisplay = quotaMin > 0
-      ? `<span class="cat-grid-pct${pct > 100 ? ' is-over' : ''}">${pct}%${pct > 100 ? '!' : ''}</span>`
+      ? `<span class="cat-grid-pct${isOver ? ' is-over' : ''}">${rawPct}%${isOver ? '!' : ''}</span>`
       : '';
     return `
       <button class="cat-grid-cell${isActive ? ' is-active' : ''}"
@@ -3078,7 +3460,7 @@ function _renderCatGrid(projet, activeCat) {
         ${pctDisplay}
         <div class="cat-grid-bar-wrap">
           <div class="cat-grid-bar-fill"
-            style="width:${pct}%;background:${fillColor};"></div>
+            style="width:${visPct}%;background:${fillColor};"></div>
         </div>
       </button>`;
   }).join('');
@@ -3242,8 +3624,22 @@ function _wireCatChips(projet) {
   );
 }
 
-function _renderCatChips(activeCat) {
-  return Object.entries(CATEGORIES).map(([key, cat]) => `
+function _renderCatChips(activeCat, projet = null) {
+  const effMin = {};
+  if (projet) {
+    (projet.sessions ?? []).forEach(s => {
+      effMin[s.categorie] = (effMin[s.categorie] ?? 0) + (Number(s.duree) || 0);
+    });
+  }
+  return Object.entries(CATEGORIES).map(([key, cat]) => {
+    const quotaMin = projet ? Math.round((Number(projet.quotas?.[key]) || 0) * 60) : 0;
+    const eff      = effMin[key] ?? 0;
+    const rawPct   = quotaMin > 0 ? Math.round(eff / quotaMin * 100) : 0;
+    const isOver   = rawPct > 100;
+    const pctHtml  = quotaMin > 0
+      ? `<span class="chip-pct${isOver ? ' is-over' : ''}">${rawPct}%${isOver ? '!' : ''}</span>`
+      : '';
+    return `
     <button
       class="cat-chip${activeCat === key ? ' is-active' : ''}"
       data-cat="${key}"
@@ -3251,8 +3647,10 @@ function _renderCatChips(activeCat) {
         ? `background:${cat.color};border-color:${cat.color};`
         : `background:${cat.bg};border-color:${cat.color}44;`}"
       type="button">
-      ${cat.label}
-    </button>`).join('');
+      <span class="chip-label">${cat.label}</span>
+      ${pctHtml}
+    </button>`;
+  }).join('');
 }
 
 function _startChrono() {
@@ -4330,6 +4728,21 @@ function _viewProfil() {
       </div>`;
       })()}
 
+      <!-- ── Déplacements ── -->
+      <div class="profil-section glass-card">
+        <p class="profil-section-title">Déplacements</p>
+        <label for="pfTauxKm">
+          Indemnité kilométrique (CHF/km)
+          <input id="pfTauxKm" type="number"
+            placeholder="0.70" min="0" step="0.05"
+            inputmode="decimal"
+            value="${u.tauxKm ?? 0.70}" />
+        </label>
+        <p class="profil-section-hint" style="margin:4px 0 0;">
+          Utilisé pour calculer les frais de déplacement automatiquement.
+        </p>
+      </div>
+
       <!-- ── Enregistrer ── -->
       <button class="btn-action" id="btnSaveProfil" type="button">
         Enregistrer
@@ -4524,10 +4937,12 @@ function _saveProfil() {
     tauxCible    = calc.cible;
   }
 
+  const tauxKm = Number($('pfTauxKm')?.value) || 0.70;
   state.user = {
     prenom, specialite, revenuCible, joursFact, charges,
     tauxPlancher, tauxCible,
     perdiem:    state.user?.perdiem    ?? 50,  // préservé
+    tauxKm,
     materiel:   state.user?.materiel   ?? [],  // préservé — géré indépendamment
     profilMode: _profilMode,
   };

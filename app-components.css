@@ -30,6 +30,18 @@ input, select, textarea {
   padding: 16px 16px 8px;
 }
 
+.stats-row-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.stats-row-3 .stat-card {
+  padding: 12px 10px;
+}
+
+.stats-row-3 .stat-value {
+  font-size: 1rem;
+}
+
 .stat-card {
   padding: 14px 16px;
   display: flex;
@@ -936,6 +948,30 @@ input, select, textarea {
 .cat-chip.is-active {
   color: #fff;
   box-shadow: 0 3px 12px rgba(0,0,0,0.15);
+}
+
+.cat-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.chip-label {
+  display: block;
+}
+
+.chip-pct {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.75;
+  line-height: 1;
+}
+
+.chip-pct.is-over {
+  color: #E07878;
+  opacity: 1;
+  font-weight: 700;
 }
 
 /* Boutons chrono */
@@ -2105,6 +2141,22 @@ input, select, textarea {
 .deploy-val.red    { color: #E07878; }
 
 /* ── Bouton retour ── */
+.deploy-conseil {
+  margin: 10px 0 6px;
+  padding: 12px 14px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: .84rem;
+  color: rgba(255,255,255,0.75);
+  line-height: 1.45;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.deploy-conseil.visible {
+  opacity: 1;
+}
+
 .btn-retour-studio {
   display: block;
   width: 100%;
@@ -2588,6 +2640,11 @@ input, select, textarea {
   cursor: pointer;
 }
 /* Mise en évidence de l'item centré — JS scroll snap */
+
+/* Picker simple — une seule colonne */
+.simple-picker-col {
+  max-width: 200px;
+}
 
 .fo-section-actions {
   display: flex;
@@ -3156,4 +3213,211 @@ input, select, textarea {
 
 .fo-corriger-btn:active {
   color: rgba(180,50,30,.7);
+}
+
+/* ─── Frais km déplacement ───────────────────────────── */
+
+.fo-km-row {
+  margin-bottom: 4px;
+}
+
+.fo-km-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fo-km-input-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fo-km-input {
+  flex: 1;
+}
+
+.fo-km-unit {
+  font-family: 'DM Sans', sans-serif;
+  font-size: .9rem;
+  font-weight: 500;
+  color: rgba(30,50,70,.6);
+  white-space: nowrap;
+}
+
+.fo-km-result {
+  font-family: 'DM Sans', sans-serif;
+  font-size: .82rem;
+  color: rgba(30,50,70,.5);
+  margin: 2px 0 12px;
+}
+
+.fo-km-result strong {
+  color: rgba(20,40,60,.85);
+}
+
+/* ─── Type pills — bottom sheet nouveau projet ───────── */
+
+.nf-type-label {
+  font-family: 'DM Sans', sans-serif;
+  font-size: .78rem;
+  font-weight: 600;
+  color: rgba(30,50,70,.5);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin: 0 0 8px;
+}
+
+.nf-type-pills {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+}
+
+.nf-type-pills::-webkit-scrollbar { display: none; }
+
+.nf-type-pill {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-radius: 99px;
+  border: 1px solid rgba(30,50,80,.12);
+  background: rgba(255,255,255,0.5);
+  font-family: 'DM Sans', sans-serif;
+  font-size: .85rem;
+  font-weight: 500;
+  color: rgba(20,40,60,.75);
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+  white-space: nowrap;
+}
+
+.nf-type-pill.is-active {
+  background: linear-gradient(135deg, #F59332, #D4700A);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 3px 10px rgba(213,112,10,.35);
+}
+
+/* ─── Brief — sous-vue terrain ───────────────────────── */
+
+.brief-client-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.brief-avatar {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #F59332, #D4700A);
+  color: #fff;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: .03em;
+  box-shadow: 0 4px 12px rgba(213,112,10,.3);
+}
+
+.brief-client-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.brief-client-name {
+  font-family: 'DM Sans', sans-serif;
+  font-size: .95rem;
+  font-weight: 600;
+  color: rgba(20,40,60,.9);
+  margin: 0 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.brief-project-label {
+  font-family: 'DM Sans', sans-serif;
+  font-size: .78rem;
+  color: rgba(30,50,70,.45);
+  margin: 0;
+}
+
+/* Temps estimés — ligne lecture seule */
+
+.brief-lock-badge {
+  font-size: .72rem;
+  opacity: .65;
+}
+
+.brief-lock-hint {
+  font-family: 'DM Sans', sans-serif;
+  font-size: .78rem;
+  color: rgba(30,50,70,.45);
+  margin: 0 0 10px;
+  font-style: italic;
+}
+
+.brief-temps-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(30,50,80,.05);
+}
+
+.brief-temps-row:last-of-type {
+  border-bottom: none;
+}
+
+.brief-temps-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.brief-temps-label {
+  flex: 1;
+  font-family: 'DM Sans', sans-serif;
+  font-size: .87rem;
+  color: rgba(20,40,60,.8);
+}
+
+.brief-temps-val {
+  font-family: 'DM Sans', sans-serif;
+  font-size: .87rem;
+  font-weight: 500;
+  color: rgba(20,40,60,.9);
+}
+
+.brief-temps-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0 2px;
+  border-top: 1px solid rgba(30,50,80,.1);
+  margin-top: 4px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: .87rem;
+  color: rgba(20,40,60,.7);
+}
+
+.brief-temps-total strong {
+  color: rgba(20,40,60,.9);
+}
+
+.brief-empty {
+  font-family: 'DM Sans', sans-serif;
+  font-size: .83rem;
+  color: rgba(30,50,70,.4);
+  font-style: italic;
+  margin: 4px 0;
 }
